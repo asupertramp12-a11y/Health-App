@@ -623,3 +623,11 @@ input[type="number"] { font: inherit; color: var(--ink); background: var(--surfa
   .facts.facts-3 .fact { padding: 10px; }
   .facts.facts-3 .v { font-size: 1.05rem; }
 }
+
+/* ---------- Captured letters ---------- */
+.fulltext { margin-top: 8px; }
+.fulltext summary { cursor: pointer; font-weight: 700; color: var(--sky); }
+.fulltext-body { white-space: pre-wrap; margin-top: 8px; padding: 12px 14px; background: var(--surface-2); border-radius: var(--radius-sm); font-size: 0.93rem; max-height: 420px; overflow: auto; }
+.msg-actions { margin-top: 6px; gap: 2px; }
+.msg-actions .btn { padding: 5px 10px; font-size: 0.9rem; }
+a.chip { text-decoration: none; }

@@ -30,6 +30,8 @@
   function ensureLogs() {
     if (!NOTES.sleep) NOTES.sleep = [];
     if (!NOTES.incidents) NOTES.incidents = [];
+    if (!NOTES.captured) NOTES.captured = [];
+    if (!NOTES.statusOverrides) NOTES.statusOverrides = {};
   }
   ensureLogs();
   function saveNotes() { return writeStore(KEYS.notes, NOTES); }
@@ -158,7 +160,7 @@
   var TABS = ['home', 'timeline', 'ehcp', 'prep', 'more'];
 
   function awaitingCount() {
-    return D ? arr(D.correspondence).filter(function (c) { return c.status === "awaiting reply"; }).length : 0;
+    return allCorrespondence().filter(function (c) { return c.status === "awaiting reply"; }).length;
   }
 
   function renderNav(active) {
@@ -221,6 +223,33 @@
   function pageHead(title, intro) {
     return '<header class="page-head"><h1>' + esc(title) + '</h1>' + (intro ? '<p>' + intro + '</p>' : '') + '</header>';
   }
+  /* Letters from the data file plus ones captured on this device. A captured item
+     drops out automatically once an entry with the same id appears in the data file. */
+  function allCorrespondence() {
+    if (!D) return [];
+    var ids = {};
+    var base = arr(D.correspondence).map(function (c) {
+      ids[c.id] = true;
+      var o = NOTES.statusOverrides[c.id];
+      return o ? Object.assign({}, c, { status: o, statusLocal: true }) : c;
+    });
+    var local = arr(NOTES.captured).filter(function (c) { return !ids[c.id]; }).map(function (c) {
+      var o = NOTES.statusOverrides[c.id];
+      return Object.assign({}, c, { local: true }, o ? { status: o } : {});
+    });
+    return base.concat(local);
+  }
+  function capturedAsEvents() {
+    if (!D) return [];
+    var ids = {};
+    arr(D.correspondence).forEach(function (c) { ids[c.id] = true; });
+    return arr(NOTES.captured).filter(function (c) { return !ids[c.id]; }).map(function (c) {
+      return { id: 'ev-' + c.id, date: c.date, title: (c.direction === 'in' ? 'Received: ' : 'Sent: ') + c.subject,
+        domain: c.domain || 'ehcp', summary: c.summary, source: 'Captured on this device', people: [c.direction === 'in' ? c.from : c.to].filter(Boolean), confidence: 'high', local: true };
+    });
+  }
+  function allEvents() { return D ? arr(D.events).concat(capturedAsEvents()) : []; }
+
   function sourceLine(s) {
     return s ? '<p class="source"><b>Source:</b> ' + esc(s) + '</p>' : '';
   }
@@ -320,12 +349,12 @@
     html: function () {
       var c = D.child || {};
       var up = upcomingItems().slice(0, 5);
-      var awaiting = arr(D.correspondence).filter(function (m) { return m.status === 'awaiting reply'; });
+      var awaiting = allCorrespondence().filter(function (m) { return m.status === 'awaiting reply'; });
       var outstanding = arr(D.ehcna && D.ehcna.adviceOutstanding);
-      var recent = arr(D.events).filter(function (e) { return !isFuture(e.date) && e.kind !== 'inferred'; })
+      var recent = allEvents().filter(function (e) { return !isFuture(e.date) && e.kind !== 'inferred'; })
         .sort(function (a, b) { return sortKey(b.date) - sortKey(a.date); }).slice(0, 6);
 
-      var lastCouncil = arr(D.correspondence).filter(function (m) { return m.direction === 'in' && /SEND|SEN Team|council/i.test(m.from); })
+      var lastCouncil = allCorrespondence().filter(function (m) { return m.direction === 'in' && /SEND|SEN Team|council/i.test(m.from); })
         .sort(function (a, b) { return sortKey(b.date) - sortKey(a.date); })[0];
 
       return '' +
@@ -397,7 +426,7 @@
     bind: function (root) {
       function draw() {
         var q = tlState.q.trim().toLowerCase();
-        var list = arr(D.events).filter(function (e) {
+        var list = allEvents().filter(function (e) {
           if (tlState.domain !== 'all' && e.domain !== tlState.domain) return false;
           if (!tlState.upcoming && isFuture(e.date)) return false;
           if (q) {
@@ -474,7 +503,7 @@
       var due = parseD(e.finalDue), start = parseD(e.requestInferred);
       var daysOver = due ? dayDiff(due.d, TODAY) : 0;
       var weeks = start ? Math.floor(dayDiff(start.d, TODAY) / 7) : '–';
-      var events = arr(D.events).filter(function (x) { return x.domain === 'ehcp'; })
+      var events = allEvents().filter(function (x) { return x.domain === 'ehcp'; })
         .sort(function (a, b) { return sortKey(a.date) - sortKey(b.date); });
 
       return pageHead('EHC needs assessment', 'Cheshire East Council, reference ' + esc((D.meta && D.meta.laReference) || '') + '. Dates and statements are from council correspondence unless marked.') +
@@ -525,13 +554,76 @@
   };
 
   /* --------------------------------------------------------------- Messages */
+  var MONTH_INDEX = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+  function looseDate(str) {
+    if (!str) return '';
+    var m = str.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})/);
+    if (m && MONTH_INDEX[m[2].slice(0, 3).toLowerCase()] != null) return isoDate(new Date(+m[3], MONTH_INDEX[m[2].slice(0, 3).toLowerCase()], +m[1]));
+    m = str.match(/([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/);
+    if (m && MONTH_INDEX[m[1].slice(0, 3).toLowerCase()] != null) return isoDate(new Date(+m[3], MONTH_INDEX[m[1].slice(0, 3).toLowerCase()], +m[2]));
+    m = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return isoDate(new Date(+m[3], +m[2] - 1, +m[1]));
+    m = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return m[0];
+    return '';
+  }
+  function cleanName(v) {
+    return (v || '').replace(/<[^>]*>/g, '').replace(/\[mailto:[^\]]*\]/g, '').replace(/["']/g, '').replace(/\s+/g, ' ').trim();
+  }
+  /* Reads the header block at the top of a pasted email (From, To, Sent/Date, Subject). */
+  function parseEmail(text) {
+    var out = {};
+    var lines = text.split(/\r?\n/).slice(0, 40);
+    lines.forEach(function (line) {
+      var m = line.match(/^\s*(From|To|Sent|Date|Subject)\s*:\s*(.+)$/i);
+      if (!m) return;
+      var k = m[1].toLowerCase();
+      if (k === 'sent') k = 'date';
+      if (out[k] == null) out[k] = m[2].trim();
+    });
+    if (out.date) out.date = looseDate(out.date);
+    if (!out.date) out.date = looseDate(lines.join(' '));
+    if (out.from) out.from = cleanName(out.from);
+    if (out.to) out.to = cleanName(out.to);
+    if (out.subject) out.subject = out.subject.replace(/^((re|fw|fwd)\s*:\s*)+/i, function (x) { return x; }).trim();
+    if (out.from) out.direction = /dugdale|wilde805|amy wilde|chrisdugdale/i.test(out.from) ? 'out' : 'in';
+    var bodyStart = text.search(/\n\s*\n/);
+    var body = (bodyStart > -1 && (out.from || out.subject) ? text.slice(bodyStart) : text).trim();
+    var greeting = body.split(/\r?\n/).filter(function (l) { return l.trim(); });
+    if (greeting.length && /^(dear|hi|hello|good (morning|afternoon|evening))\b/i.test(greeting[0])) greeting.shift();
+    var signoff = greeting.findIndex(function (l) { return /^(kind regards|best regards|regards|many thanks|thanks|yours sincerely|yours faithfully|best wishes)\b/i.test(l.trim()); });
+    if (signoff > 0) greeting = greeting.slice(0, signoff);
+    out.summary = greeting.join(' ').replace(/\s+/g, ' ').slice(0, 280);
+    if (out.summary.length === 280) out.summary = out.summary.replace(/\s+\S*$/, '') + '…';
+    return out;
+  }
+  function letterAsText(m) {
+    return [
+      'Letter or email captured in Dorothea Hub',
+      'ID: ' + m.id,
+      'Direction: ' + (m.direction === 'in' ? 'Received' : 'Sent by us'),
+      'Date: ' + fmt(m.date, true),
+      'From: ' + (m.from || ''),
+      'To: ' + (m.to || ''),
+      'Subject: ' + (m.subject || ''),
+      'Status: ' + (m.status || 'info'),
+      'Area: ' + domainLabel(m.domain || 'ehcp'),
+      '',
+      m.fullText || m.summary || ''
+    ].join('\n');
+  }
+
   VIEWS.messages = {
     html: function (r) {
+      if (r.param === 'new' || r.param === 'edit') return captureFormHTML(r.query.get('id'));
       var f = r.query.get('f') || 'all';
-      var filters = [['all', 'All'], ['awaiting', 'Awaiting reply'], ['in', 'Received'], ['out', 'Sent by us']];
-      var list = arr(D.correspondence).filter(function (m) {
+      var filters = [['all', 'All'], ['awaiting', 'Awaiting reply'], ['in', 'Received'], ['out', 'Sent by us'], ['local', 'Added on this device']];
+      var all = allCorrespondence();
+      var localCount = all.filter(function (m) { return m.local; }).length;
+      var list = all.filter(function (m) {
         if (f === 'awaiting') return m.status === 'awaiting reply';
         if (f === 'in' || f === 'out') return m.direction === f;
+        if (f === 'local') return m.local;
         return true;
       }).sort(function (a, b) { return sortKey(b.date) - sortKey(a.date); });
 
@@ -542,21 +634,122 @@
         return '';
       };
 
-      return pageHead('Letters and emails', 'Key correspondence in one place, newest first. Replies we’re waiting for are flagged with how long it’s been.') +
-        '<div class="filters" role="group" aria-label="Filter letters">' + filters.map(function (x) {
+      return '<div id="msg-page">' + pageHead('Letters and emails', 'Key correspondence in one place, newest first. Replies we’re waiting for are flagged with how long it’s been.') +
+        '<div class="btn-row no-print" style="margin-bottom:16px"><a class="btn btn-primary" href="#/messages/new">' + icon('plus') + 'Capture an email or letter</a>' +
+        (localCount ? '<button class="btn btn-secondary" type="button" data-msg="export">Download ' + localCount + ' for Claude</button>' : '') + '</div>' +
+        '<div class="filters" role="group" aria-label="Filter letters">' + filters.filter(function (x) { return x[0] !== 'local' || localCount; }).map(function (x) {
           return '<a class="chip" href="#/messages' + (x[0] === 'all' ? '' : '?f=' + x[0]) + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + '</a>';
         }).join('') + '</div>' +
         '<section class="panel">' + (list.length ? '<ul class="msg-list">' + list.map(function (m) {
+          var actions = '';
+          if (m.status === 'awaiting reply') actions += '<button class="btn btn-quiet" type="button" data-msg="replied" data-id="' + esc(m.id) + '">Mark as replied</button>';
+          if (m.statusLocal) actions += '<button class="btn btn-quiet" type="button" data-msg="undo-status" data-id="' + esc(m.id) + '">Undo status change</button>';
+          if (m.local) actions += '<button class="btn btn-quiet" type="button" data-msg="copy" data-id="' + esc(m.id) + '">Copy</button>' +
+            '<a class="btn btn-quiet" href="#/messages/edit?id=' + encodeURIComponent(m.id) + '">Edit</a>' +
+            '<button class="btn btn-quiet danger" type="button" data-msg="delete" data-id="' + esc(m.id) + '">Delete</button>';
           return '<li class="msg"><span class="dir ' + esc(m.direction) + '" title="' + (m.direction === 'in' ? 'Received' : 'Sent by us') + '">' + icon(m.direction === 'in' ? 'inbox' : 'outbox') + '</span><div>' +
-            '<div class="row1"><span class="who">' + esc(m.direction === 'in' ? m.from : 'To ' + m.to) + '</span><span class="when">' + esc(fmt(m.date)) + (m.dateApprox ? ' or later' : '') + '</span>' + statusPill(m) + '</div>' +
+            '<div class="row1"><span class="who">' + esc(m.direction === 'in' ? m.from : 'To ' + m.to) + '</span><span class="when">' + esc(fmt(m.date)) + (m.dateApprox ? ' or later' : '') + '</span>' + statusPill(m) +
+              (m.local ? '<span class="pill lilac">Added on this device</span>' : '') + '</div>' +
             '<p class="subj">' + esc(m.subject) + '</p>' +
-            '<p class="sum">' + esc(m.summary) + '</p>' +
+            (m.summary ? '<p class="sum">' + esc(m.summary) + '</p>' : '') +
             (arr(m.asks).length ? '<ul>' + m.asks.map(function (a) { return '<li>' + esc(a) + '</li>'; }).join('') + '</ul>' : '') +
-            sourceLine(m.source) +
+            (m.fullText ? '<details class="fulltext"><summary>Show full text</summary><div class="fulltext-body">' + esc(m.fullText) + '</div></details>' : '') +
+            sourceLine(m.local ? 'Captured on this device' : m.source) +
+            (actions ? '<div class="btn-row msg-actions no-print">' + actions + '</div>' : '') +
           '</div></li>';
-        }).join('') + '</ul>' : '<p class="empty">No letters in this view.</p>') + '</section>';
+        }).join('') + '</ul>' : '<p class="empty">No letters in this view.</p>') + '</section>' +
+        (localCount ? '<p class="tiny section-gap">Letters you capture are saved on this device. Use “Download for Claude” to send them to the Dorothea Hub project, and they’ll come back in the next data file.</p>' : '') +
+        '</div>';
+    },
+    bind: function (root, r) {
+      if (r.param === 'new' || r.param === 'edit') return bindCaptureForm(root, r.query.get('id'));
+      var page = $('#msg-page', root);
+      page.addEventListener('click', function (ev) {
+        var b = ev.target.closest('[data-msg]'); if (!b) return;
+        var act = b.getAttribute('data-msg'), id = b.getAttribute('data-id');
+        if (act === 'replied') { NOTES.statusOverrides[id] = 'answered'; saveNotes(); render(); }
+        else if (act === 'undo-status') { delete NOTES.statusOverrides[id]; saveNotes(); render(); }
+        else if (act === 'delete') {
+          if (!confirm('Delete this captured letter from this device?')) return;
+          NOTES.captured = NOTES.captured.filter(function (c) { return c.id !== id; });
+          delete NOTES.statusOverrides[id]; saveNotes(); render();
+        } else if (act === 'copy') {
+          var m = allCorrespondence().filter(function (x) { return x.id === id; })[0]; if (!m) return;
+          var text = letterAsText(m);
+          var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1800); };
+          if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () { window.prompt('Copy this text:', text); });
+          else window.prompt('Copy this text:', text);
+        } else if (act === 'export') {
+          var items = allCorrespondence().filter(function (x) { return x.local; }).sort(function (a, c) { return sortKey(a.date) - sortKey(c.date); });
+          var text2 = 'Dorothea Hub — letters and emails captured on this device (' + fmt(todayISO(), true) + ')\nPlease add these to the hub data, keeping the IDs.\n\n' +
+            items.map(letterAsText).join('\n\n========================================\n\n');
+          downloadText('dorothea-letters-' + todayISO() + '.txt', text2, 'text/plain');
+        }
+      });
     }
   };
+
+  function captureFormHTML(editId) {
+    var m = editId ? arr(NOTES.captured).filter(function (x) { return x.id === editId; })[0] || {} : {};
+    var opts = Object.keys(D.domains || {}).map(function (k) { return '<option value="' + esc(k) + '"' + ((m.domain || 'ehcp') === k ? ' selected' : '') + '>' + esc(domainLabel(k)) + '</option>'; }).join('');
+    var dir = m.direction || 'in';
+    return '<a class="crumb" href="#/messages">Letters and emails</a>' +
+      pageHead(editId ? 'Edit captured letter' : 'Capture an email or letter', 'Paste the whole email, including the From, Sent and Subject lines if you can. The details below fill themselves in; check them before saving.') +
+      '<form class="panel" id="cap-form" style="max-width:760px">' +
+        '<div class="field"><label for="cf-text">Paste the email or letter</label><textarea id="cf-text" rows="10" style="min-height:220px" placeholder="From: …&#10;Sent: …&#10;To: …&#10;Subject: …&#10;&#10;Dear Chris and Amy, …">' + esc(m.fullText || '') + '</textarea>' +
+        '<div class="btn-row" style="margin-top:8px"><button class="btn btn-secondary" type="button" id="cf-parse">Fill in details from the text</button><span class="saved" id="cf-parsed"></span></div></div>' +
+        '<div class="field"><span class="label">Direction</span><div class="btn-row seg">' +
+          '<label><input type="radio" name="dir" value="in"' + (dir === 'in' ? ' checked' : '') + '> Received</label>' +
+          '<label><input type="radio" name="dir" value="out"' + (dir === 'out' ? ' checked' : '') + '> Sent by us</label></div></div>' +
+        '<div class="grid grid-2"><div class="field"><label for="cf-date">Date</label><input type="date" id="cf-date" required value="' + esc(m.date || todayISO()) + '"></div>' +
+        '<div class="field"><label for="cf-domain">Area</label><select id="cf-domain">' + opts + '</select></div></div>' +
+        '<div class="grid grid-2"><div class="field"><label for="cf-from">From</label><input type="text" id="cf-from" value="' + esc(m.from || '') + '"></div>' +
+        '<div class="field"><label for="cf-to">To</label><input type="text" id="cf-to" value="' + esc(m.to || '') + '"></div></div>' +
+        '<div class="field"><label for="cf-subject">Subject</label><input type="text" id="cf-subject" required value="' + esc(m.subject || '') + '"></div>' +
+        '<div class="field"><label for="cf-summary">Short summary</label><textarea id="cf-summary" rows="3" style="min-height:80px" placeholder="What it says in a sentence or two">' + esc(m.summary || '') + '</textarea></div>' +
+        '<div class="field"><span class="label">Does it need a reply?</span><div class="btn-row seg">' +
+          '<label><input type="radio" name="status" value="info"' + (m.status !== 'awaiting reply' ? ' checked' : '') + '> No</label>' +
+          '<label><input type="radio" name="status" value="awaiting reply"' + (m.status === 'awaiting reply' ? ' checked' : '') + '> Yes, we’re waiting for one</label></div></div>' +
+        '<div class="btn-row"><button class="btn btn-primary" type="submit">Save</button><a class="btn btn-quiet" href="#/messages">Cancel</a></div>' +
+      '</form>';
+  }
+  function bindCaptureForm(root, editId) {
+    var form = $('#cap-form', root);
+    function fill(force) {
+      var p = parseEmail($('#cf-text', form).value);
+      var filled = [];
+      [['from', 'cf-from'], ['to', 'cf-to'], ['subject', 'cf-subject'], ['summary', 'cf-summary']].forEach(function (k) {
+        var el = $('#' + k[1], form);
+        if (p[k[0]] && (force || !el.value.trim())) { el.value = p[k[0]]; filled.push(k[0]); }
+      });
+      if (p.date) { $('#cf-date', form).value = p.date; filled.push('date'); }
+      if (p.direction) { $('input[name="dir"][value="' + p.direction + '"]', form).checked = true; filled.push('direction'); }
+      $('#cf-parsed', form).textContent = filled.length ? 'Filled in: ' + filled.join(', ') + '. Please check.' : 'Couldn’t find From, Sent or Subject lines — fill in the details yourself.';
+    }
+    $('#cf-parse', form).addEventListener('click', function () { fill(true); });
+    $('#cf-text', form).addEventListener('paste', function () { setTimeout(function () { fill(false); }, 50); });
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var entry = {
+        id: editId || 'cap-' + todayISO().replace(/-/g, '') + '-' + Date.now().toString(36).slice(-4),
+        date: $('#cf-date', form).value || todayISO(),
+        direction: ($('input[name="dir"]:checked', form) || {}).value || 'in',
+        from: $('#cf-from', form).value.trim(),
+        to: $('#cf-to', form).value.trim(),
+        subject: $('#cf-subject', form).value.trim() || '(no subject)',
+        summary: $('#cf-summary', form).value.trim(),
+        status: ($('input[name="status"]:checked', form) || {}).value || 'info',
+        domain: $('#cf-domain', form).value,
+        fullText: $('#cf-text', form).value.trim(),
+        captured: new Date().toISOString()
+      };
+      if (!entry.from && entry.direction === 'out') entry.from = 'Chris and Amy';
+      NOTES.captured = NOTES.captured.filter(function (c) { return c.id !== entry.id; });
+      NOTES.captured.push(entry);
+      saveNotes();
+      location.hash = '#/messages?f=local';
+    });
+  }
 
   /* ----------------------------------------------------------------- Health */
   VIEWS.health = {
@@ -1229,7 +1422,7 @@
       if (hay.indexOf(needle) !== -1) out.push({ kind: kind, title: title, body: body, href: href, date: date });
     }
     arr(D.events).forEach(function (e) { add('Timeline', e.title, [fmt(e.date), e.summary, arr(e.people).join(', '), e.source].join(' — '), '#/timeline', e.date); });
-    arr(D.correspondence).forEach(function (m) { add('Letter', m.subject, [fmt(m.date), m.from, m.to, m.summary].join(' — '), '#/messages', m.date); });
+    allCorrespondence().forEach(function (m) { add('Letter', m.subject, [fmt(m.date), m.from, m.to, m.summary, m.fullText || ''].join(' — '), '#/messages', m.date); });
     allAppointments().forEach(function (a) { add('Appointment', a.title, [fmt(a.date), a.with, arr(a.context).join(' ')].join(' — '), '#/prep/' + encodeURIComponent(a.id), a.date); });
     arr(D.people).forEach(function (p) { add('Person', p.name, [p.role, p.org, p.email, p.phone, p.note].filter(Boolean).join(' — '), '#/people'); });
     ['confirmed', 'recorded', 'concerns', 'outstanding'].forEach(function (k) {
@@ -1310,7 +1503,7 @@
         download('dorothea-hub-notes-' + todayISO() + '.json', NOTES); setStatus('Notes backed up.');
       } else if (action === 'clear-notes') {
         if (!confirm('Clear all your ticks, notes and added appointments in this browser?')) return;
-        NOTES = { v: 1, prep: {}, appts: [], sleep: [], incidents: [] }; saveNotes(); render(); setStatus('Your notes have been cleared.');
+        NOTES = { v: 1, prep: {}, appts: [], sleep: [], incidents: [], captured: [], statusOverrides: {} }; saveNotes(); render(); setStatus('Your notes have been cleared.');
       }
     });
 
@@ -1328,7 +1521,7 @@
       readJSONFile(f, function (err, obj) {
         ev.target.value = '';
         if (err || !obj || typeof obj.prep !== 'object') { setStatus('That file isn’t a notes backup.', true); return; }
-        NOTES = { v: 1, prep: obj.prep || {}, appts: arr(obj.appts), sleep: arr(obj.sleep), incidents: arr(obj.incidents) }; saveNotes(); render(); setStatus('Notes restored from ' + f.name + '.');
+        NOTES = { v: 1, prep: obj.prep || {}, appts: arr(obj.appts), sleep: arr(obj.sleep), incidents: arr(obj.incidents), captured: arr(obj.captured), statusOverrides: obj.statusOverrides || {} }; saveNotes(); render(); setStatus('Notes restored from ' + f.name + '.');
       });
     });
 
