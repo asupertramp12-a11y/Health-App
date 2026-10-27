@@ -1,6 +1,7 @@
 /* Dorothea Hub — app logic
    Plain JavaScript, no build step. Reads window.CASE_DATA from data/case-data.js.
-   Personal notes and added appointments are kept in this browser's localStorage. */
+   Personal notes and added appointments are kept in this browser's localStorage.
+   Edit mode (pencil button) changes the case data itself; see “Edit mode” below. */
 (function () {
   'use strict';
 
@@ -138,7 +139,8 @@
     outbox: '<path d="M7 17 17 7"/><path d="M9 7h8v8"/>',
     print: '<path d="M7 9V3.5h10V9"/><rect x="3.5" y="9" width="17" height="8" rx="2"/><path d="M7 14h10v6.5H7z"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
-    support: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/>'
+    support: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/>',
+    pencil: '<path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/>'
   };
   function icon(name, cls) {
     return '<svg class="icon ' + (cls || '') + '" aria-hidden="true" viewBox="0 0 24 24">' + (ICON[name] || '') + '</svg>';
@@ -206,8 +208,9 @@
     var activeKey = VIEWS[r.route] ? r.route : 'home';
     renderNav(activeKey);
     var main = $('#main');
-    main.innerHTML = view.html(r);
+    main.innerHTML = (r.route === 'edit' ? '' : editBarHTML()) + view.html(r);
     if (view.bind) view.bind(main, r);
+    syncEditToggle();
     var title = (ROUTES.filter(function (x) { return x.key === activeKey; })[0] || {}).label;
     document.title = (title && activeKey !== 'home' ? title + ' — ' : '') + 'Dorothea Hub';
     $('#search-input').value = r.route === 'search' ? (r.query.get('q') || '') : '';
@@ -283,7 +286,7 @@
     function short(s) { var p = parseD(s); return p ? p.d.getDate() + ' ' + MONTHS[p.d.getMonth()] : ''; }
     var labels = '' +
       '<span class="track-mark" style="left:0"></span>' +
-      '<span class="track-label start" style="left:0"><b>Request</b> ~' + esc(short(e.requestInferred)) + '</span>' +
+      '<span class="track-label start" style="left:0"><b>Request</b> ' + (requestIsInferred() ? '~' : '') + esc(short(e.requestInferred)) + '</span>' +
       (decisionPct !== null ? '<span class="track-mark" style="left:' + decisionPct.toFixed(2) + '%"></span><span class="track-label mid" style="left:' + decisionPct.toFixed(2) + '%"><b>Decision</b> ' + esc(short(e.decisionToAssess)) + '</span>' : '') +
       '<span class="track-mark" style="left:' + allowedPct.toFixed(2) + '%"></span>' +
       '<span class="track-label' + (overdue ? '' : ' end') + '" style="left:' + allowedPct.toFixed(2) + '%"><b>Due</b> ' + esc(short(e.finalDue)) + '</span>' +
@@ -295,17 +298,22 @@
           '<div><h2 id="clock-title">EHC needs assessment</h2><p class="status">' + esc(e.status || '') + '</p></div>' +
           '<div class="clock-big" aria-live="off">' + big + '</div>' +
         '</div>' +
-        '<div class="track" role="img" aria-label="20-week statutory period from about ' + esc(fmt(e.requestInferred, true)) + ' to ' + esc(fmt(e.finalDue, true)) + (overdue ? ', now ' + daysOver + ' days over' : '') + '">' +
+        '<div class="track" role="img" aria-label="20-week statutory period from ' + (requestIsInferred() ? 'about ' : '') + esc(fmt(e.requestInferred, true)) + ' to ' + esc(fmt(e.finalDue, true)) + (overdue ? ', now ' + daysOver + ' days over' : '') + '">' +
           '<div class="track-bar"><span class="track-allowed" style="width:' + allowedPct.toFixed(2) + '%"></span>' +
           (overdue ? '<span class="track-over" style="width:' + overPct.toFixed(2) + '%"></span>' : '') + '</div>' +
           labels +
         '</div>' +
         '<div class="clock-foot">' +
           '<span>Week ' + weeksSince + ' since the request (limit: ' + (e.weeksAllowed || 20) + ')</span>' +
-          '<span>No statutory exception applied</span>' +
+          '<span>' + (e.exceptionApplied ? 'Statutory exception applied' : 'No statutory exception applied') + '</span>' +
           '<a href="#/ehcp">See the full assessment</a>' +
         '</div>' +
       '</section>';
+  }
+
+  function requestIsInferred() {
+    var st = arr(D.ehcna && D.ehcna.stages).filter(function (x) { return x.key === 'request'; })[0];
+    return st ? !!st.inferred : true;
   }
 
   function datebox(s) {
@@ -367,12 +375,12 @@
         morningBannerHTML() +
         clockHTML() +
         '<div class="grid grid-2 section-gap">' +
-          '<section class="panel"><div class="panel-head"><h2>Coming up</h2><a href="#/prep">Prep</a></div>' +
+          '<section class="panel"><div class="panel-head"><h2>Coming up</h2>' + (EDIT ? '<a href="#/edit/keyDates">Key dates</a>' : '<a href="#/prep">Prep</a>') + '</div>' +
             (up.length ? '<ul class="upcoming-list">' + up.map(function (i) {
               return '<li>' + datebox(i.date) + '<div><a class="t" href="' + i.href + '">' + esc(i.label) + '</a><span class="s">' + esc(relative(i.date)) + (i.sub ? ', ' + esc(i.sub) : '') + '</span></div></li>';
             }).join('') + '</ul>' : '<p class="empty">Nothing booked. Add an appointment from Prep.</p>') +
           '</section>' +
-          '<section class="panel"><div class="panel-head"><h2>Waiting on</h2><a href="#/messages">Letters</a></div>' +
+          '<section class="panel"><div class="panel-head"><h2>Waiting on</h2>' + (EDIT ? '<a href="#/edit/ehcna.adviceOutstanding">Edit</a>' : '<a href="#/messages">Letters</a>') + '</div>' +
             '<ul class="wait-list">' +
               outstanding.map(function (o) {
                 return '<li><span class="pill coral">Advice</span><div class="what"><b>' + esc(o.label) + '</b><span>' + esc(o.detail || '') + '</span></div></li>';
@@ -419,7 +427,7 @@
           '<input class="filter-input" id="tl-q" type="search" placeholder="Filter by word or name" value="' + esc(tlState.q) + '">' +
           '<button class="chip" type="button" id="tl-up" aria-pressed="' + tlState.upcoming + '">Show upcoming</button>' +
           '<button class="chip" type="button" id="tl-sort" aria-pressed="false">' + (tlState.newest ? 'Newest first' : 'Oldest first') + '</button>' +
-          '<button class="btn btn-quiet no-print" type="button" id="tl-print">' + icon('print') + 'Print</button>' +
+          '<button class="btn btn-quiet no-print" type="button" id="tl-print">' + icon('print') + 'Print</button>' + addLink('events', 'Add event') +
         '</div>' +
         '<div id="tl-body"></div>';
     },
@@ -465,7 +473,7 @@
               (e.kind === 'deadline' && future ? '<span class="pill coral">Deadline</span>' : '') +
               (e.kind === 'change' ? '<span class="pill lilac">Change of officer</span>' : '') +
               (future ? '<span class="pill">' + esc(relative(e.date)) + '</span>' : '') +
-              confPill(e.confidence) +
+              confPill(e.confidence) + eb('events', e) +
             '</div>' +
             '<h3>' + esc(e.title) + '</h3>' +
             (e.summary ? '<p>' + esc(e.summary) + '</p>' : '') +
@@ -507,40 +515,46 @@
         .sort(function (a, b) { return sortKey(a.date) - sortKey(b.date); });
 
       return pageHead('EHC needs assessment', 'Cheshire East Council, reference ' + esc((D.meta && D.meta.laReference) || '') + '. Dates and statements are from council correspondence unless marked.') +
+        (EDIT ? '<div class="btn-row" style="margin-bottom:12px">' + objLink('ehcna', 'Edit status and dates') + '</div>' : '') +
         '<div class="facts">' +
           '<div class="fact"><span class="k">Decision to assess</span><span class="v">' + esc(fmt(e.decisionToAssess)) + '</span></div>' +
           '<div class="fact"><span class="k">Final EHCP was due</span><span class="v">' + esc(fmt(e.finalDue)) + '</span></div>' +
           '<div class="fact alert"><span class="k">' + (daysOver > 0 ? 'Days overdue' : 'Days remaining') + '</span><span class="v">' + Math.abs(daysOver) + '</span></div>' +
-          '<div class="fact"><span class="k">Weeks since request (approx.)</span><span class="v">' + weeks + ' of ' + (e.weeksAllowed || 20) + '</span></div>' +
+          '<div class="fact"><span class="k">Weeks since request' + (requestIsInferred() ? ' (approx.)' : '') + '</span><span class="v">' + weeks + ' of ' + (e.weeksAllowed || 20) + '</span></div>' +
         '</div>' +
-        '<section class="panel section-gap"><div class="panel-head"><h2>Where the assessment is</h2></div>' +
+        '<section class="panel section-gap"><div class="panel-head"><h2>Where the assessment is</h2>' + (EDIT ? '<a href="#/edit/ehcna.stages">Edit stages</a>' : '') + '</div>' +
           '<ol class="stepper">' + arr(e.stages).map(function (s) {
             var sub = s.date ? fmt(s.date) + (s.inferred ? ' (inferred)' : '') : '';
             if (s.note) sub = sub ? sub + '. ' + s.note : s.note;
             return '<li class="' + esc(s.state) + '"><span class="lbl">' + esc(s.label) + '</span><span class="sub">' + esc(sub) + '</span></li>';
           }).join('') + '</ol>' +
+          (e.expectedOutcome ? '<div class="note-box section-gap"><p><b>Expected next:</b> ' + esc(e.expectedOutcome) + '</p></div>' : '') +
         '</section>' +
         '<div class="section-gap">' + clockHTML() + '</div>' +
         '<div class="grid grid-2 section-gap">' +
           '<section class="panel"><h2>Advice received</h2><ul class="ticklist">' +
-            arr(e.adviceReceived).map(function (a) { return '<li><span class="mark yes">✓</span><div>' + esc(a.label) + '<p class="source">' + esc(a.source) + '</p></div></li>'; }).join('') +
-          '</ul></section>' +
+            arr(e.adviceReceived).map(function (a) { return '<li><span class="mark yes">✓</span><div>' + esc(a.label) + '<p class="source">' + esc(a.source) + '</p>' + eb('ehcna.adviceReceived', a) + '</div></li>'; }).join('') +
+          '</ul>' + addLink('ehcna.adviceReceived', 'Add advice received') + '</section>' +
           '<section class="panel"><h2>Advice outstanding</h2><ul class="ticklist">' +
-            arr(e.adviceOutstanding).map(function (a) { return '<li><span class="mark no">!</span><div><b>' + esc(a.label) + '</b><p class="muted" style="margin:2px 0 0">' + esc(a.detail) + '</p><p class="source">' + esc(a.source) + '</p></div></li>'; }).join('') +
-          '</ul>' +
+            arr(e.adviceOutstanding).map(function (a) { return '<li><span class="mark no">!</span><div><b>' + esc(a.label) + '</b><p class="muted" style="margin:2px 0 0">' + esc(a.detail) + '</p><p class="source">' + esc(a.source) + '</p>' + eb('ehcna.adviceOutstanding', a) + '</div></li>'; }).join('') +
+          '</ul>' + addLink('ehcna.adviceOutstanding', 'Add outstanding advice') +
           '<h3 class="section-gap">Reason given for the delay</h3><p>' + esc(e.delayReason || '') + '</p>' +
-          '<p><span class="pill coral">No statutory exception applied</span></p></section>' +
+          '<p><span class="pill coral">' + (e.exceptionApplied ? 'Statutory exception applied' : 'No statutory exception applied') + '</span></p></section>' +
         '</div>' +
         '<div class="grid grid-2 section-gap">' +
           '<section class="panel"><h2>Waiting for answers</h2><ul class="ticklist">' +
             arr(e.waitingOn).map(function (q) { return '<li><span class="mark q">?</span><div>' + esc(q) + '</div></li>'; }).join('') +
-          '</ul>' + sourceLine(e.waitingOnSource) + '</section>' +
+          '</ul>' + sourceLine(e.waitingOnSource) + objLink('ehcna', 'Edit questions') + '</section>' +
           '<section class="panel"><h2>Who holds the case</h2><ul class="ticklist">' +
             arr(e.officers).map(function (o) {
-              return '<li><span class="mark ' + (o.to ? 'no' : 'q') + '">' + (o.to ? '×' : '?') + '</span><div><b>' + esc(o.name) + '</b> — ' + esc(o.role) +
-                '<p class="muted" style="margin:2px 0 0">' + esc(fmt(o.from)) + (o.to ? ' to ' + esc(fmt(o.to)) : ' onwards') + '. ' + esc(o.note || '') + '</p></div></li>';
+              var current = !o.to && o.name && o.name !== 'Not yet named';
+              return '<li><span class="mark ' + (o.to ? 'no' : (current ? 'yes' : 'q')) + '">' + (o.to ? '×' : (current ? '✓' : '?')) + '</span><div><b>' + esc(o.name) + '</b> — ' + esc(o.role) +
+                '<p class="muted" style="margin:2px 0 0">' + esc(fmt(o.from)) + (o.to ? ' to ' + esc(fmt(o.to)) : ' onwards') + '. ' + esc(o.note || '') + '</p>' + eb('ehcna.officers', o) + '</div></li>';
             }).join('') +
-          '</ul><p class="source">Until a new officer is named, write to SEN Team East and quote ref ' + esc((D.meta && D.meta.laReference) || '') + '.</p></section>' +
+          '</ul>' + addLink('ehcna.officers', 'Add officer') + caseHolderNote() + '</section>' +
+        '</div>' +
+        commitmentsHTML(e) +
+        '<div>' +
         '</div>' +
         '<section class="panel section-gap"><h2>About the 20-week clock</h2>' +
           '<div class="note-box"><p>' + esc(e.requestInferredNote || '') + '</p></div>' +
@@ -552,6 +566,27 @@
         '</section>';
     }
   };
+
+  function caseHolderNote() {
+    var ref = esc((D.meta && D.meta.laReference) || '');
+    var cur = arr(D.ehcna && D.ehcna.officers).filter(function (o) { return !o.to && o.name && o.name !== 'Not yet named'; }).pop();
+    if (cur) {
+      var p = arr(D.people).filter(function (x) { return x.name === cur.name; })[0];
+      return '<p class="source">Write to ' + esc(cur.name) + (p && p.email ? ' (<a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a>)' : '') + ' and quote ref ' + ref + '.</p>';
+    }
+    return '<p class="source">Until a new officer is named, write to SEN Team East and quote ref ' + ref + '.</p>';
+  }
+  function commitmentsHTML(e) {
+    var list = arr(e.commitmentsFromLetters);
+    if (!list.length && !EDIT) return '';
+    return '<section class="panel section-gap"><div class="panel-head"><h2>What the council said it would do</h2></div>' +
+      (list.length ? '<ul class="ticklist">' + list.slice().sort(function (a, b) { return sortKey(a.date) - sortKey(b.date); }).map(function (c) {
+        var met = /^met\b/i.test(c.position || ''), missed = /missed|not recorded|not done/i.test(c.position || '');
+        return '<li><span class="mark ' + (met ? 'yes' : missed ? 'no' : 'q') + '">' + (met ? '✓' : missed ? '!' : '?') + '</span><div><b>' + esc(c.commitment) + '</b>' +
+          '<p class="muted" style="margin:2px 0 0">' + esc(c.position || '') + '</p><p class="source">' + esc(fmt(c.date)) + (c.source ? ' — ' + esc(c.source) : '') + '</p>' + eb('ehcna.commitmentsFromLetters', c) + '</div></li>';
+      }).join('') + '</ul>' : '<p class="empty">Nothing recorded yet.</p>') +
+      addLink('ehcna.commitmentsFromLetters', 'Add a commitment') + '</section>';
+  }
 
   /* --------------------------------------------------------------- Messages */
   var MONTH_INDEX = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
@@ -635,7 +670,7 @@
       };
 
       return '<div id="msg-page">' + pageHead('Letters and emails', 'Key correspondence in one place, newest first. Replies we’re waiting for are flagged with how long it’s been.') +
-        '<div class="btn-row no-print" style="margin-bottom:16px"><a class="btn btn-primary" href="#/messages/new">' + icon('plus') + 'Capture an email or letter</a>' +
+        '<div class="btn-row no-print" style="margin-bottom:16px"><a class="btn btn-primary" href="#/messages/new">' + icon('plus') + 'Capture an email or letter</a>' + addLink('correspondence', 'Add to case data directly') +
         (localCount ? '<button class="btn btn-secondary" type="button" data-msg="export">Download ' + localCount + ' for Claude</button>' : '') + '</div>' +
         '<div class="filters" role="group" aria-label="Filter letters">' + filters.filter(function (x) { return x[0] !== 'local' || localCount; }).map(function (x) {
           return '<a class="chip" href="#/messages' + (x[0] === 'all' ? '' : '?f=' + x[0]) + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + '</a>';
@@ -643,6 +678,8 @@
         '<section class="panel">' + (list.length ? '<ul class="msg-list">' + list.map(function (m) {
           var actions = '';
           if (m.status === 'awaiting reply') actions += '<button class="btn btn-quiet" type="button" data-msg="replied" data-id="' + esc(m.id) + '">Mark as replied</button>';
+          if (EDIT && !m.local) actions += eb('correspondence', { id: m.id });
+          if (EDIT && m.local) actions += '<button class="btn btn-quiet" type="button" data-msg="promote" data-id="' + esc(m.id) + '">Add to case data</button>';
           if (m.statusLocal) actions += '<button class="btn btn-quiet" type="button" data-msg="undo-status" data-id="' + esc(m.id) + '">Undo status change</button>';
           if (m.local) actions += '<button class="btn btn-quiet" type="button" data-msg="copy" data-id="' + esc(m.id) + '">Copy</button>' +
             '<a class="btn btn-quiet" href="#/messages/edit?id=' + encodeURIComponent(m.id) + '">Edit</a>' +
@@ -667,7 +704,16 @@
       page.addEventListener('click', function (ev) {
         var b = ev.target.closest('[data-msg]'); if (!b) return;
         var act = b.getAttribute('data-msg'), id = b.getAttribute('data-id');
-        if (act === 'replied') { NOTES.statusOverrides[id] = 'answered'; saveNotes(); render(); }
+        if (act === 'replied') {
+          var inData = EDIT && arr(D.correspondence).filter(function (x) { return x.id === id; })[0];
+          if (inData) {
+            pushUndo('mark answered ' + inData.subject);
+            inData.status = 'answered'; delete NOTES.statusOverrides[id]; saveNotes();
+            persist('edited', 'Letters and emails', inData.subject + ' — marked answered');
+          } else { NOTES.statusOverrides[id] = 'answered'; saveNotes(); }
+          render();
+        }
+        else if (act === 'promote') { promoteCaptured(id); }
         else if (act === 'undo-status') { delete NOTES.statusOverrides[id]; saveNotes(); render(); }
         else if (act === 'delete') {
           if (!confirm('Delete this captured letter from this device?')) return;
@@ -755,19 +801,19 @@
   VIEWS.health = {
     html: function () {
       var h = D.health || {};
-      function col(title, items, badge, cls, intro) {
+      function col(title, items, badge, cls, intro, key) {
         return '<section class="panel hcol"><h2><span class="badge pill ' + cls + '">' + badge + '</span>' + esc(title) + '</h2>' +
           (intro ? '<p class="muted">' + esc(intro) + '</p>' : '') +
           arr(items).map(function (i) {
-            return '<div class="hitem"><b>' + esc(i.label) + '</b>' + (i.note ? '<p>' + esc(i.note) + '</p>' : '') + sourceLine(i.source) + '</div>';
-          }).join('') + '</section>';
+            return '<div class="hitem"><b>' + esc(i.label) + '</b>' + (i.note ? '<p>' + esc(i.note) + '</p>' : '') + sourceLine(i.source) + eb('health.' + key, i) + '</div>';
+          }).join('') + addLink('health.' + key, 'Add') + '</section>';
       }
       return pageHead('Health', 'Kept in four groups so a concern is never mistaken for a diagnosis. Only the first group comes straight from a clinical letter held in the project.') +
         '<div class="health-cols">' +
-          col('Confirmed in clinical letters', h.confirmed, '✓', 'mint', 'Stated by a clinician in a letter we hold.') +
-          col('Recorded in other documents', h.recorded, '≈', 'sky', 'Written down by nursery or meeting notes; the original clinical report isn’t in the project.') +
-          col('Concerns and observations', h.concerns, '!', 'sun', 'Reported by parents or staff. Not diagnoses.') +
-          col('Waiting for or not yet evidenced', h.outstanding, '…', 'coral', 'Referrals and reviews with no outcome on file.') +
+          col('Confirmed in clinical letters', h.confirmed, '✓', 'mint', 'Stated by a clinician in a letter we hold.', 'confirmed') +
+          col('Recorded in other documents', h.recorded, '≈', 'sky', 'Written down by nursery or meeting notes; the original clinical report isn’t in the project.', 'recorded') +
+          col('Concerns and observations', h.concerns, '!', 'sun', 'Reported by parents or staff. Not diagnoses.', 'concerns') +
+          col('Waiting for or not yet evidenced', h.outstanding, '…', 'coral', 'Referrals and reviews with no outcome on file.', 'outstanding') +
         '</div>';
     }
   };
@@ -783,6 +829,7 @@
         return '<section class="panel"><h2>' + esc(title) + '</h2><ul>' + arr(items).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></section>';
       }
       return pageHead('About ' + (c.shortName || 'Dorothea'), esc(ageText(c.dob)) + '. Attends ' + esc(c.setting || '') + (c.settingDays ? ' on ' + esc(c.settingDays) : '') + '. Due to start reception in ' + esc(c.receptionYear || '') + '.') +
+        (EDIT ? '<div class="btn-row" style="margin-bottom:12px">' + objLink('child', 'Edit her details') + objLink('profile', 'Edit profile') + '<a class="edit-btn no-print" href="#/edit/sendPlans">' + icon('pencil') + 'SEND plan cycles</a></div>' : '') +
         '<section class="panel"><p class="quote">' + esc(c.headline || '') + '</p></section>' +
         '<div class="grid grid-2 section-gap">' +
           bubbles('What she does well', p.strengths, 'sun') +
@@ -806,7 +853,7 @@
   VIEWS.people = {
     html: function () {
       return pageHead('People', 'Everyone involved, grouped by service. Tap an email or phone number to use it.') +
-        '<div class="filters"><label class="visually-hidden" for="ppl-q">Filter people</label><input class="filter-input" id="ppl-q" type="search" placeholder="Filter by name, role or service"></div>' +
+        '<div class="filters"><label class="visually-hidden" for="ppl-q">Filter people</label><input class="filter-input" id="ppl-q" type="search" placeholder="Filter by name, role or service">' + addLink('people', 'Add person') + '</div>' +
         '<div id="ppl-body"></div>';
     },
     bind: function (root) {
@@ -830,7 +877,7 @@
             if (p.phone) contact += '<a href="tel:' + esc(p.phone.replace(/\s+/g, '')) + '">' + esc(p.phone) + '</a>';
             return '<article class="person"><h3>' + esc(p.name) + '</h3><div class="role">' + esc(p.role) + '</div><div class="org">' + esc(p.org) + '</div>' +
               (contact ? '<div class="contact">' + contact + '</div>' : '') +
-              (p.note ? '<div class="flag">' + esc(p.note) + '</div>' : '') + '</article>';
+              (p.note ? '<div class="flag">' + esc(p.note) + '</div>' : '') + eb('people', p) + '</article>';
           }).join('') + '</div>';
         }).join('') : '<p class="empty">No one matches that.</p>';
       }
@@ -911,7 +958,7 @@
         '<p>' + esc(fmt(a.date, true)) + (a.time ? ', ' + esc(a.time) : '') + ' — ' + esc(relative(a.date)) + '<br>' +
         esc(a.with || '') + (a.where ? '<br>' + esc(a.where) : '') + '</p>' +
         '<div class="btn-row no-print"><button class="btn btn-secondary" type="button" id="print">' + icon('print') + 'Print prep sheet</button>' +
-        (a.local ? '<button class="btn btn-quiet danger" type="button" id="remove-appt">Remove this appointment</button>' : '') + '</div>' +
+        (a.local ? '<button class="btn btn-quiet danger" type="button" id="remove-appt">Remove this appointment</button>' : '') + eb('appointments', a, 'Edit appointment details') + '</div>' +
       '</header>' +
       '<div class="grid grid-2">' +
         '<section class="panel"><h2>What’s on file</h2>' +
@@ -1161,8 +1208,8 @@
             return '<li><span class="pill ' + (statusCls[x.status] || '') + '" style="flex:none">' + esc(x.status) + '</span><div><b>' + esc(x.name) + '</b>' +
               '<p class="muted" style="margin:2px 0 0">' + esc(x.position) + '</p>' +
               (x.next ? '<p style="margin:4px 0 0"><b>Next:</b> ' + esc(x.next) + '</p>' : '') +
-              (x.source ? '<p class="source">' + esc(x.source) + '</p>' : '') + '</div></li>';
-          }).join('') + '</ul>' : '<p class="empty">No support items in the data file yet.</p>') +
+              (x.source ? '<p class="source">' + esc(x.source) + '</p>' : '') + eb('support', x) + '</div></li>';
+          }).join('') + '</ul>' : '<p class="empty">No support items in the data file yet.</p>') + addLink('support', 'Add support item') +
         '</section>' +
         '<p class="tiny section-gap">Diary and incident entries are saved on this device only. Use Data and backups to copy them to another phone.</p>';
     },
@@ -1371,20 +1418,20 @@
           arr(D.conflicts).map(function (c) {
             return '<section class="panel conflict"><h2>' + esc(c.title) + '</h2><dl>' +
               '<dt>Source A</dt><dd>' + esc(c.a) + '</dd><dt>Source B</dt><dd>' + esc(c.b) + '</dd>' +
-              '<dt>Possible reason</dt><dd>' + esc(c.explanation) + '</dd><dt>Which to trust</dt><dd><b>' + esc(c.stronger) + '</b></dd></dl></section>';
-          }).join('');
+              '<dt>Possible reason</dt><dd>' + esc(c.explanation) + '</dd><dt>Which to trust</dt><dd><b>' + esc(c.stronger) + '</b></dd></dl>' + eb('conflicts', c) + '</section>';
+          }).join('') + addLink('conflicts', 'Add a conflicting record');
       } else if (tab === 'gaps') {
         body = '<p class="muted">Documents that are referred to elsewhere, or should exist, but aren’t in the project yet.</p><ul class="gap-list">' +
-          arr(D.gaps).map(function (g) { return '<li><b>' + esc(g.title) + '</b><p>' + esc(g.detail) + '</p><p class="act">' + esc(g.action) + '</p></li>'; }).join('') + '</ul>';
+          arr(D.gaps).map(function (g) { return '<li><b>' + esc(g.title) + '</b><p>' + esc(g.detail) + '</p><p class="act">' + esc(g.action) + '</p>' + eb('gaps', g) + '</li>'; }).join('') + '</ul>' + addLink('gaps', 'Add a missing document');
       } else if (tab === 'index') {
         body = '<section class="panel"><div class="table-wrap"><table><thead><tr><th>ID</th><th>Date</th><th>Document</th><th>From</th><th>Finding</th><th>Strength</th></tr></thead><tbody>' +
           arr(D.evidence).slice().sort(function (a, b) { return a.id.localeCompare(b.id); }).map(function (e) {
-            return '<tr><td><span class="pill sky">' + esc(e.id) + '</span></td><td style="white-space:nowrap">' + esc(fmt(e.date)) + '</td><td>' + esc(e.doc) + '</td><td>' + esc(e.author) + '<br><span class="tiny">' + esc(e.org) + '</span></td><td>' + esc(e.finding) + '</td><td>' + esc(e.strength) + '</td></tr>';
-          }).join('') + '</tbody></table></div></section>';
+            return '<tr><td><span class="pill sky">' + esc(e.id) + '</span></td><td style="white-space:nowrap">' + esc(fmt(e.date)) + '</td><td>' + esc(e.doc) + '</td><td>' + esc(e.author) + '<br><span class="tiny">' + esc(e.org) + '</span></td><td>' + esc(e.finding) + '</td><td>' + esc(e.strength) + eb('evidence', e) + '</td></tr>';
+          }).join('') + '</tbody></table></div></section>' + addLink('evidence', 'Add evidence');
       } else {
         body = '<section class="panel"><div class="table-wrap"><table><thead><tr><th>File</th><th>Type</th><th>What it is</th></tr></thead><tbody>' +
-          arr(D.documents).map(function (d) { return '<tr><td>' + esc(d.name) + '</td><td>' + esc(d.kind) + '</td><td>' + esc(d.note) + '</td></tr>'; }).join('') +
-          '</tbody></table></div></section>';
+          arr(D.documents).map(function (d) { return '<tr><td>' + esc(d.name) + '</td><td>' + esc(d.kind) + '</td><td>' + esc(d.note) + eb('documents', d) + '</td></tr>'; }).join('') +
+          '</tbody></table></div></section>' + addLink('documents', 'Add a source file');
       }
       return pageHead('Evidence check', 'Use this before meetings and before the draft plan arrives, to spot what needs correcting or chasing.') +
         '<div class="tabs" role="tablist">' + tabs.map(function (t) {
@@ -1402,6 +1449,7 @@
           var badge = r.key === 'messages' && awaitingCount() ? ' <span class="pill sun">' + awaitingCount() + ' awaiting</span>' : '';
           return '<li><a href="#/' + r.key + '">' + icon(r.icon) + '<span>' + esc(r.label) + badge + '<span class="desc">' + esc(r.desc) + '</span></span></a></li>';
         }).join('') +
+        '<li><a href="#/edit">' + icon('pencil') + '<span>Edit case data<span class="desc">Update letters, dates and status, save the file, undo</span></span></a></li>' +
         '<li><a href="#" data-action="open-settings">' + icon('evidence') + '<span>Data and backups<span class="desc">Load updated data, back up your notes</span></span></a></li>' +
         '</ul>';
     }
@@ -1485,6 +1533,16 @@
 
   function bindGlobal() {
     var dlg = $('#settings');
+    var tb = $('.topbar'), sb = $('.settings-btn', tb);
+    if (tb && !$('.edit-toggle', tb)) {
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'icon-btn edit-toggle';
+      btn.setAttribute('data-action', 'toggle-edit'); btn.setAttribute('aria-label', 'Edit mode'); btn.setAttribute('aria-pressed', String(EDIT));
+      btn.innerHTML = icon('pencil');
+      tb.insertBefore(btn, sb || null);
+    }
+    var foot = $('.sidebar-foot');
+    if (foot && !$('[href="#/edit"]', foot)) foot.insertAdjacentHTML('afterbegin', '<p style="margin:0 0 8px"><a class="linkish" href="#/edit">Edit case data</a></p>');
     document.addEventListener('click', function (ev) {
       var t = ev.target.closest('[data-action]');
       if (!t) return;
@@ -1494,7 +1552,16 @@
         if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
       } else if (action === 'export-data') {
         if (!D) { setStatus('No data loaded yet.', true); return; }
-        download('case-data.json', D); setStatus('Downloaded case-data.json');
+        download('case-data.json', D); markExported(); setStatus('Downloaded case-data.json');
+      } else if (action === 'save-file') {
+        ev.preventDefault();
+        if (!D) return;
+        saveFile(function () { render(); flash('File saved'); });
+      } else if (action === 'toggle-edit') {
+        ev.preventDefault();
+        if (!D) { if (dlg.showModal) dlg.showModal(); return; }
+        setEdit(!EDIT); render();
+        if (EDIT) flash('Edit mode on — tap Edit on anything to change it');
       } else if (action === 'reset-data') {
         if (!BUILT_IN && !confirm('Remove Dorothea’s data from this device? You can load the file again any time.')) return;
         removeStore(KEYS.data); D = BUILT_IN; usingOverride = false; refreshSettingsNote(); render();
@@ -1512,7 +1579,9 @@
       readJSONFile(f, function (err, obj) {
         ev.target.value = '';
         if (err || !obj || !obj.child || !Array.isArray(obj.events)) { setStatus('That file isn’t a Dorothea Hub data file. It needs “child” and “events” sections.', true); return; }
+        if (D) pushUndo('load ' + f.name);
         if (!writeStore(KEYS.data, obj)) { setStatus('This browser wouldn’t store the file. It may be in private mode.', true); return; }
+        markExported();
         D = obj; usingOverride = true; refreshSettingsNote(); render(); setStatus('Loaded ' + f.name + '.');
       });
     });
@@ -1533,6 +1602,557 @@
 
     window.addEventListener('hashchange', onRoute);
   }
+
+  /* ------------------------------------------------------------ Edit mode
+     Lets you change case-data.json from inside the app. Every edit is written
+     straight into the data stored on this device, stamped in a change log, and
+     can be undone. "Save file" hands the updated case-data.json to the share
+     sheet (iPhone) or downloads it, so you always have a master copy. */
+
+  var EKEYS = { mode: 'dh:edit:v1', undo: 'dh:undo:v1', exported: 'dh:exported:v1' };
+  var EDIT = !!readStore(EKEYS.mode);
+  var UNDO_MAX = 15;
+
+  function opts(list) { return function () { return list.map(function (x) { return Array.isArray(x) ? x : [x, x || '(none)']; }); }; }
+  function domainOpts() { return Object.keys(D.domains || {}).map(function (k) { return [k, domainLabel(k)]; }); }
+
+  var F = {
+    date: function (k, label, o) { return Object.assign({ k: k, label: label, type: 'date' }, o || {}); },
+    text: function (k, label, o) { return Object.assign({ k: k, label: label, type: 'text' }, o || {}); },
+    area: function (k, label, o) { return Object.assign({ k: k, label: label, type: 'textarea' }, o || {}); },
+    lines: function (k, label, o) { return Object.assign({ k: k, label: label, type: 'lines' }, o || {}); },
+    sel: function (k, label, options, o) { return Object.assign({ k: k, label: label, type: 'select', options: options }, o || {}); },
+    check: function (k, label, o) { return Object.assign({ k: k, label: label, type: 'check' }, o || {}); },
+    num: function (k, label, o) { return Object.assign({ k: k, label: label, type: 'number' }, o || {}); }
+  };
+
+  var SECTIONS = {
+    'ehcna': { label: 'Assessment status and dates', kind: 'object', group: 'EHC assessment', fields: [
+      F.text('status', 'Current status (shown on the clock)', { required: true }),
+      F.date('requestInferred', 'Request received by the council', { help: 'The 20-week clock starts here.' }),
+      F.area('requestInferredNote', 'Note about the 20-week clock'),
+      F.date('decisionToAssess', 'Decision to assess'),
+      F.area('decisionToAssessNote', 'Note about the decision date'),
+      F.date('draftDecisionDue', 'Decision on a draft plan was due'),
+      F.date('finalDue', 'Final EHCP due'),
+      F.num('weeksAllowed', 'Weeks allowed'),
+      F.text('expectedOutcome', 'What the council now expects, and when'),
+      F.check('exceptionApplied', 'A statutory exception has been applied', { keepFalse: true }),
+      F.area('delayReason', 'Reason given for the delay'),
+      F.lines('waitingOn', 'Waiting for answers on', { help: 'One per line. Delete a line once it’s answered.' }),
+      F.text('waitingOnSource', 'Asked in (letter or email)')
+    ] },
+    'ehcna.stages': { label: 'Assessment stages', kind: 'list', group: 'EHC assessment', title: 'label', fields: [
+      F.text('label', 'Stage', { required: true }),
+      F.date('date', 'Date'),
+      F.sel('state', 'State', opts([['done', 'Done'], ['current', 'Happening now'], ['todo', 'Still to come'], ['late', 'Late']])),
+      F.text('note', 'Note'),
+      F.check('inferred', 'Date is worked out, not confirmed')
+    ] },
+    'ehcna.adviceReceived': { label: 'Advice received', kind: 'list', group: 'EHC assessment', title: 'label', fields: [
+      F.text('label', 'Advice', { required: true }), F.text('source', 'Source')
+    ] },
+    'ehcna.adviceOutstanding': { label: 'Advice outstanding or not held', kind: 'list', group: 'EHC assessment', title: 'label', fields: [
+      F.text('label', 'Advice', { required: true }), F.area('detail', 'Detail'), F.text('source', 'Source')
+    ] },
+    'ehcna.officers': { label: 'Who holds the case', kind: 'list', group: 'EHC assessment', title: 'name', fields: [
+      F.text('name', 'Name', { required: true }), F.text('role', 'Role'), F.date('from', 'From'), F.date('to', 'To', { help: 'Leave empty if they still hold the case.' }), F.area('note', 'Note')
+    ] },
+    'ehcna.commitmentsFromLetters': { label: 'What the council committed to', kind: 'list', group: 'EHC assessment', title: 'commitment', date: 'date', fields: [
+      F.date('date', 'Letter date'), F.area('commitment', 'What they said they would do', { required: true }), F.area('position', 'Where it stands now'), F.text('source', 'Source')
+    ] },
+    'correspondence': { label: 'Letters and emails', kind: 'list', group: 'Letters and timeline', idPrefix: 'c', title: 'subject', date: 'date', fields: [
+      F.date('date', 'Date', { required: true }),
+      F.check('dateApprox', 'Date is approximate'),
+      F.sel('direction', 'Direction', opts([['in', 'Received'], ['out', 'Sent by us']])),
+      F.text('from', 'From'), F.text('to', 'To'),
+      F.text('subject', 'Subject', { required: true }),
+      F.area('summary', 'Summary'),
+      F.sel('status', 'Status', opts([['info', 'For information'], ['awaiting reply', 'Awaiting reply'], ['answered', 'Answered'], ['superseded', 'Superseded']])),
+      F.sel('answers', 'This replies to', function () {
+        return [['', '(not a reply)']].concat(arr(D.correspondence).filter(function (c) { return c.status === 'awaiting reply' || c.status === 'info'; })
+          .slice().sort(function (a, b) { return sortKey(b.date) - sortKey(a.date); }).slice(0, 12)
+          .map(function (c) { return [c.id, fmt(c.date) + ' — ' + c.subject + (c.status === 'awaiting reply' ? ' (awaiting)' : '')]; }));
+      }, { pseudo: true, newOnly: true, help: 'Marks that letter as answered.' }),
+      F.lines('asks', 'Points raised or asked', { help: 'One per line.' }),
+      F.text('source', 'Source file'),
+      F.area('fullText', 'Full text (optional)'),
+      F.check('addEvent', 'Also add it to the timeline', { pseudo: true, newOnly: true, defaultOn: true })
+    ] },
+    'events': { label: 'Timeline events', kind: 'list', group: 'Letters and timeline', idPrefix: 'e', title: 'title', date: 'date', fields: [
+      F.date('date', 'Date', { required: true }),
+      F.text('title', 'Title', { required: true }),
+      F.sel('domain', 'Area', domainOpts),
+      F.sel('kind', 'Type', opts([['', 'Event'], ['deadline', 'Deadline'], ['inferred', 'Worked out from other dates'], ['change', 'Change of officer']])),
+      F.area('summary', 'Summary'),
+      F.text('source', 'Source'),
+      F.sel('confidence', 'How sure', opts([['high', 'From the document itself'], ['medium', 'Secondary source'], ['low', 'Inferred']]))
+    ] },
+    'keyDates': { label: 'Key dates', kind: 'list', group: 'Letters and timeline', title: 'label', date: 'date', fields: [
+      F.date('date', 'Date', { required: true }), F.text('label', 'What', { required: true }),
+      F.sel('type', 'Type', opts([['appointment', 'Appointment'], ['deadline', 'Deadline'], ['milestone', 'Milestone']]))
+    ] },
+    'appointments': { label: 'Appointments', kind: 'list', group: 'Letters and timeline', idPrefix: 'appt-', title: 'title', date: 'date', fields: [
+      F.text('title', 'What is it?', { required: true }), F.date('date', 'Date', { required: true }), F.text('time', 'Time'),
+      F.text('with', 'Who with'), F.text('where', 'Where'),
+      F.sel('status', 'Status', opts(['booked', 'proposed', 'date to confirm', 'done', 'cancelled'])),
+      F.sel('domain', 'Area', domainOpts),
+      F.lines('context', 'What’s on file', { help: 'One per line.' }), F.lines('questions', 'Questions to ask', { help: 'One per line.' }), F.lines('bring', 'Take with you', { help: 'One per line.' })
+    ] },
+    'people': { label: 'People', kind: 'list', group: 'People and support', title: 'name', fields: [
+      F.text('name', 'Name', { required: true }), F.text('role', 'Role'), F.text('org', 'Organisation'),
+      F.sel('group', 'Group', opts(['Council', 'Advice', 'Nursery', 'Therapy', 'Health', 'Other'])),
+      F.text('email', 'Email'), F.text('phone', 'Phone'), F.area('note', 'Note')
+    ] },
+    'support': { label: 'Support and benefits', kind: 'list', group: 'People and support', title: 'name', fields: [
+      F.text('name', 'Name', { required: true }), F.sel('status', 'Status', opts(['in place', 'to do', 'exploring', 'not yet', 'later'])),
+      F.area('position', 'Where it stands'), F.area('next', 'Next step'), F.text('source', 'Source')
+    ] },
+    'health.confirmed': { label: 'Health: confirmed in clinical letters', kind: 'list', group: 'Health', title: 'label', fields: [F.text('label', 'What', { required: true }), F.area('note', 'Note'), F.text('source', 'Source')] },
+    'health.recorded': { label: 'Health: recorded in other documents', kind: 'list', group: 'Health', title: 'label', fields: [F.text('label', 'What', { required: true }), F.area('note', 'Note'), F.text('source', 'Source')] },
+    'health.concerns': { label: 'Health: concerns and observations', kind: 'list', group: 'Health', title: 'label', fields: [F.text('label', 'What', { required: true }), F.area('note', 'Note'), F.text('source', 'Source')] },
+    'health.outstanding': { label: 'Health: waiting for or not yet evidenced', kind: 'list', group: 'Health', title: 'label', fields: [F.text('label', 'What', { required: true }), F.area('note', 'Note'), F.text('source', 'Source')] },
+    'conflicts': { label: 'Conflicting records', kind: 'list', group: 'Evidence', title: 'title', fields: [
+      F.text('title', 'Title', { required: true }), F.area('a', 'Source A'), F.area('b', 'Source B'), F.area('explanation', 'Possible reason'), F.area('stronger', 'Which to trust')
+    ] },
+    'gaps': { label: 'Missing documents', kind: 'list', group: 'Evidence', title: 'title', fields: [
+      F.text('title', 'Title', { required: true }), F.area('detail', 'Detail'), F.area('action', 'Action')
+    ] },
+    'evidence': { label: 'Evidence index', kind: 'list', group: 'Evidence', title: 'doc', date: 'date', fields: [
+      F.text('id', 'ID (e.g. DDW-016)', { required: true }), F.date('date', 'Date'), F.text('doc', 'Document', { required: true }), F.text('author', 'Author'), F.text('org', 'Organisation'),
+      F.area('finding', 'Finding'), F.sel('domain', 'Area', domainOpts), F.text('strength', 'Strength')
+    ] },
+    'documents': { label: 'Source files', kind: 'list', group: 'Evidence', title: 'name', fields: [
+      F.text('name', 'File name', { required: true }), F.text('kind', 'Type'), F.text('note', 'What it is')
+    ] },
+    'child': { label: 'Dorothea’s details', kind: 'object', group: 'About Dorothea', fields: [
+      F.text('name', 'Full name', { required: true }), F.text('shortName', 'Short name'), F.date('dob', 'Date of birth'),
+      F.text('setting', 'Nursery or school'), F.text('settingDays', 'Days attending'), F.text('receptionYear', 'Starts reception'), F.area('headline', 'Headline')
+    ] },
+    'profile': { label: 'About Dorothea (profile)', kind: 'object', group: 'About Dorothea', fields: [
+      F.lines('strengths', 'What she does well'), F.lines('whatWorks', 'What helps her'), F.lines('needsHelpWith', 'What she needs help with'),
+      F.lines('makesHappy', 'What makes her happy'), F.lines('importantNow', 'Important to her now'), F.lines('future', 'Important for her future'),
+      F.area('parentAspirations', 'Our hopes for her'), F.text('source', 'Source')
+    ] },
+    'sendPlans': { label: 'Nursery SEND plan cycles', kind: 'list', group: 'About Dorothea', title: 'cycle', date: 'start', fields: [
+      F.text('cycle', 'Cycle', { required: true }), F.date('start', 'Started'), F.date('review', 'Review'), F.text('outcome', 'Outcome'), F.area('progress', 'Progress noted')
+    ] }
+  };
+
+  function getPath(path, create) {
+    var parts = path.split('.'), o = D;
+    for (var i = 0; i < parts.length; i++) {
+      var last = i === parts.length - 1;
+      if (o[parts[i]] == null) {
+        if (!create) return last && SECTIONS[path] && SECTIONS[path].kind === 'list' ? [] : null;
+        o[parts[i]] = last && SECTIONS[path] && SECTIONS[path].kind === 'list' ? [] : {};
+      }
+      o = o[parts[i]];
+    }
+    return o;
+  }
+  function itemTitle(sec, x) {
+    if (typeof x === 'string') return x;
+    var t = x && (x[sec.title] || x.title || x.label || x.name || x.subject || x.id);
+    return t ? String(t) : '(untitled)';
+  }
+  function nextId(prefix, list) {
+    var max = 0;
+    arr(list).forEach(function (x) {
+      if (x && typeof x.id === 'string' && x.id.indexOf(prefix) === 0) {
+        var n = parseInt(x.id.slice(prefix.length), 10); if (!isNaN(n) && n > max) max = n;
+      }
+    });
+    var n2 = max + 1;
+    return prefix + (n2 < 10 ? '0' : '') + n2;
+  }
+  function findIndex(path, ref) {
+    var list = getPath(path);
+    if (!Array.isArray(list)) return -1;
+    if (ref && ref.id != null) {
+      for (var i = 0; i < list.length; i++) if (list[i] && list[i].id === ref.id) return i;
+    }
+    if (ref && ref.obj) return list.indexOf(ref.obj);
+    return ref && ref.i != null ? +ref.i : -1;
+  }
+
+  /* Links used inside the normal pages while edit mode is on */
+  function editHref(path, ref) {
+    var q = [];
+    if (ref === 'new') q.push('i=new');
+    else if (ref && ref.id != null) q.push('id=' + encodeURIComponent(ref.id));
+    else if (ref && ref.obj) { var i = findIndex(path, ref); if (i < 0) return ''; q.push('i=' + i); }
+    q.push('back=' + encodeURIComponent(location.hash || '#/home'));
+    return '#/edit/' + path + '?' + q.join('&');
+  }
+  function eb(path, obj, label) {
+    if (!EDIT || !obj || obj.local) return '';
+    var href = editHref(path, obj.id != null ? { id: obj.id } : { obj: obj });
+    return href ? '<a class="edit-btn no-print" href="' + href + '">' + icon('pencil') + (label || 'Edit') + '</a>' : '';
+  }
+  function addLink(path, label) {
+    if (!EDIT) return '';
+    return '<a class="edit-btn add no-print" href="' + editHref(path, 'new') + '">' + icon('plus') + esc(label || 'Add') + '</a>';
+  }
+  function objLink(path, label) {
+    if (!EDIT) return '';
+    return '<a class="edit-btn no-print" href="#/edit/' + path + '?back=' + encodeURIComponent(location.hash || '#/home') + '">' + icon('pencil') + esc(label || 'Edit') + '</a>';
+  }
+
+  /* Saving, undo and the change log */
+  function pushUndo(label) {
+    var stack = readStore(EKEYS.undo) || [];
+    stack.unshift({ at: new Date().toISOString(), label: label, data: JSON.stringify(D) });
+    stack = stack.slice(0, UNDO_MAX);
+    while (stack.length && !writeStore(EKEYS.undo, stack)) stack.pop();
+  }
+  function persist(action, section, item) {
+    D.meta = D.meta || {};
+    D.meta.updated = todayISO();
+    D.meta.editedAt = new Date().toISOString();
+    D.changeLog = arr(D.changeLog);
+    D.changeLog.unshift({ at: D.meta.editedAt, action: action, section: section, item: item });
+    if (D.changeLog.length > 300) D.changeLog.length = 300;
+    var ok = writeStore(KEYS.data, D);
+    usingOverride = true;
+    refreshSettingsNote();
+    return ok;
+  }
+  function unsavedCount() {
+    var ex = readStore(EKEYS.exported);
+    return arr(D && D.changeLog).filter(function (c) { return !ex || c.at > ex; }).length;
+  }
+  function markExported() { writeStore(EKEYS.exported, new Date().toISOString()); }
+  function saveFile(after) {
+    var name = 'case-data.json';
+    var json = JSON.stringify(D, null, 2);
+    function fallback() { download(name, D); markExported(); if (after) after(); }
+    try {
+      var file = new File([json], name, { type: 'application/json' });
+      if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: 'Dorothea Hub data' }).then(function () { markExported(); if (after) after(); }, function (err) {
+          if (err && err.name === 'AbortError') return;
+          fallback();
+        });
+        return;
+      }
+    } catch (e) { /* fall through to download */ }
+    fallback();
+  }
+  function undoLast() {
+    var stack = readStore(EKEYS.undo) || [];
+    var top = stack.shift();
+    if (!top) return null;
+    try { D = JSON.parse(top.data); } catch (e) { return null; }
+    writeStore(EKEYS.undo, stack);
+    writeStore(KEYS.data, D);
+    usingOverride = true;
+    refreshSettingsNote();
+    return top.label;
+  }
+  function setEdit(on) {
+    EDIT = !!on;
+    if (EDIT) writeStore(EKEYS.mode, 1); else removeStore(EKEYS.mode);
+    syncEditToggle();
+  }
+  function syncEditToggle() {
+    $all('[data-action="toggle-edit"].edit-toggle').forEach(function (b) { b.setAttribute('aria-pressed', String(EDIT)); });
+    document.body.classList.toggle('editing', EDIT);
+  }
+
+  function editBarHTML() {
+    if (!EDIT || !D) return '';
+    var n = unsavedCount();
+    return '<div class="edit-bar no-print" role="region" aria-label="Edit mode">' +
+      '<div><b>Edit mode</b><span>' + (n ? n + (n === 1 ? ' change' : ' changes') + ' not yet saved to a file' : 'Everything is saved to a file') + '</span></div>' +
+      '<div class="btn-row"><a class="btn btn-quiet" href="#/edit">Edit hub</a>' +
+      '<button class="btn ' + (n ? 'btn-primary' : 'btn-secondary') + '" type="button" data-action="save-file">Save file</button>' +
+      '<button class="btn btn-quiet" type="button" data-action="toggle-edit">Done</button></div></div>';
+  }
+
+  function timeAgo(iso) {
+    var d = new Date(iso); if (isNaN(d)) return '';
+    var mins = Math.round((Date.now() - d.getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    var h = Math.round(mins / 60);
+    if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+    return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+  }
+
+  /* ----- The edit hub, section lists and forms */
+  VIEWS.edit = {
+    html: function (r) {
+      if (!r.param) return editHubHTML();
+      var sec = SECTIONS[r.param];
+      if (!sec) return pageHead('Not found', '<a href="#/edit">Back to the edit hub</a>');
+      if (sec.kind === 'object' || r.query.get('i') != null || r.query.get('id') != null) return editFormHTML(r.param, r.query);
+      return sectionListHTML(r.param);
+    },
+    bind: function (root, r) {
+      if (r.param && SECTIONS[r.param] && (SECTIONS[r.param].kind === 'object' || r.query.get('i') != null || r.query.get('id') != null)) bindEditForm(root, r.param, r.query);
+      var u = $('#undo-btn', root);
+      if (u) u.addEventListener('click', function () {
+        var label = undoLast();
+        render();
+        flash(label ? 'Undone: ' + label : 'Nothing to undo');
+      });
+    }
+  };
+
+  function flash(msg) {
+    var el = document.createElement('div');
+    el.className = 'toast'; el.setAttribute('role', 'status'); el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(function () { el.classList.add('out'); }, 2200);
+    setTimeout(function () { el.remove(); }, 2700);
+  }
+
+  function editHubHTML() {
+    var n = unsavedCount();
+    var ex = readStore(EKEYS.exported);
+    var stack = readStore(EKEYS.undo) || [];
+    var log = arr(D.changeLog).slice(0, 25);
+    var groups = {};
+    Object.keys(SECTIONS).forEach(function (k) { var s = SECTIONS[k]; (groups[s.group] = groups[s.group] || []).push(k); });
+    var quick = [
+      ['correspondence', 'new', 'Add a letter or email'],
+      ['ehcna', null, 'Update assessment status'],
+      ['events', 'new', 'Add a timeline event'],
+      ['keyDates', 'new', 'Add a key date'],
+      ['gaps', 'new', 'Add a missing document'],
+      ['conflicts', 'new', 'Add a conflicting record'],
+      ['people', 'new', 'Add a person']
+    ];
+    return pageHead('Edit case data', 'Changes save on this phone straight away and every page updates. Use Save file to keep a master copy of <code>case-data.json</code> in Files or iCloud.') +
+      '<section class="panel save-panel">' +
+        '<div class="facts facts-3">' +
+          '<div class="fact' + (n ? ' alert' : '') + '"><span class="k">Not yet saved to a file</span><span class="v">' + n + '</span></div>' +
+          '<div class="fact"><span class="k">Last change</span><span class="v small">' + esc(D.meta && D.meta.editedAt ? timeAgo(D.meta.editedAt) : '–') + '</span></div>' +
+          '<div class="fact"><span class="k">Last saved file</span><span class="v small">' + esc(ex ? timeAgo(ex) : 'Not yet') + '</span></div>' +
+        '</div>' +
+        '<div class="btn-row section-gap">' +
+          '<button class="btn btn-primary" type="button" data-action="save-file">Save file</button>' +
+          (stack.length ? '<button class="btn btn-secondary" type="button" id="undo-btn">Undo: ' + esc(stack[0].label) + '</button>' : '') +
+          '<button class="btn btn-quiet" type="button" data-action="toggle-edit">' + (EDIT ? 'Turn off edit buttons' : 'Show edit buttons on every page') + '</button>' +
+        '</div>' +
+      '</section>' +
+      '<section class="panel section-gap"><h2>Quick updates</h2><div class="quick-grid">' +
+        quick.map(function (q) {
+          var href = q[1] === 'new' ? '#/edit/' + q[0] + '?i=new&back=' + encodeURIComponent('#/edit') : '#/edit/' + q[0] + '?back=' + encodeURIComponent('#/edit');
+          return '<a class="tile" href="' + href + '"><span class="l">' + esc(q[2]) + '</span></a>';
+        }).join('') +
+      '</div></section>' +
+      '<div class="grid grid-2 section-gap">' +
+        '<section class="panel"><h2>Everything in the file</h2>' +
+          Object.keys(groups).map(function (g) {
+            return '<h3 class="section-gap">' + esc(g) + '</h3><ul class="mini-events">' + groups[g].map(function (k) {
+              var s = SECTIONS[k], list = getPath(k);
+              var count = s.kind === 'list' ? '<span class="pill">' + arr(list).length + '</span>' : '';
+              return '<li><a href="#/edit/' + k + '">' + esc(s.label) + '</a>' + count + '</li>';
+            }).join('') + '</ul>';
+          }).join('') +
+        '</section>' +
+        '<section class="panel"><h2>Recent changes</h2>' +
+          (log.length ? '<ul class="mini-events change-log">' + log.map(function (c) {
+            var unsaved = !ex || c.at > ex;
+            return '<li><span class="when">' + esc(timeAgo(c.at)) + '</span><span><span class="pill ' + (c.action === 'deleted' ? 'coral' : c.action === 'added' ? 'mint' : 'sky') + '">' + esc(c.action) + '</span> ' +
+              esc(c.item) + '<span class="tiny"> · ' + esc(c.section) + (unsaved ? ' · not in a saved file yet' : '') + '</span></span></li>';
+          }).join('') + '</ul>' : '<p class="empty">No changes made in the app yet.</p>') +
+        '</section>' +
+      '</div>';
+  }
+
+  function sectionListHTML(path) {
+    var sec = SECTIONS[path];
+    var list = arr(getPath(path));
+    var rows = list.map(function (x, i) { return { x: x, i: i }; });
+    if (sec.date) rows.sort(function (a, b) { return sortKey(b.x[sec.date]) - sortKey(a.x[sec.date]); });
+    return '<a class="crumb" href="#/edit">Edit hub</a>' + pageHead(sec.label, list.length + (list.length === 1 ? ' item' : ' items') + '. Tap one to change or delete it.') +
+      '<div class="btn-row" style="margin-bottom:16px"><a class="btn btn-primary" href="#/edit/' + path + '?i=new">' + icon('plus') + 'Add</a></div>' +
+      '<section class="panel">' + (rows.length ? '<ul class="mini-events edit-list">' + rows.map(function (r) {
+        var d = sec.date ? r.x[sec.date] : '';
+        return '<li><span class="when">' + esc(d ? fmt(d) : '') + '</span><a href="#/edit/' + path + '?i=' + r.i + '">' + esc(itemTitle(sec, r.x)) + '</a></li>';
+      }).join('') + '</ul>' : '<p class="empty">Nothing here yet.</p>') + '</section>';
+  }
+
+  function dateFieldHTML(id, val) {
+    var month = /^\d{4}-\d{2}$/.test(val || '');
+    return '<div class="date-field"><input type="' + (month ? 'month' : 'date') + '" id="' + id + '" value="' + esc(val || '') + '">' +
+      '<label class="mini-check"><input type="checkbox" data-month-for="' + id + '"' + (month ? ' checked' : '') + '> Month only</label>' +
+      '<button type="button" class="btn btn-quiet small" data-clear-for="' + id + '">Clear</button></div>';
+  }
+
+  function fieldHTML(f, item, isNew) {
+    if (f.newOnly && !isNew) return '';
+    var id = 'ef-' + f.k, v = item[f.k];
+    var help = f.help ? '<span class="tiny">' + esc(f.help) + '</span>' : '';
+    var req = f.required ? ' <span class="req" aria-hidden="true">*</span>' : '';
+    if (f.type === 'check') {
+      var on = f.pseudo ? !!f.defaultOn : !!v;
+      return '<div class="field"><label class="check-line" for="' + id + '"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + esc(f.label) + '</label>' + help + '</div>';
+    }
+    var input;
+    if (f.type === 'textarea') input = '<textarea id="' + id + '" rows="4">' + esc(v || '') + '</textarea>';
+    else if (f.type === 'lines') input = '<textarea id="' + id + '" rows="5">' + esc(arr(v).join('\n')) + '</textarea>';
+    else if (f.type === 'date') input = dateFieldHTML(id, v);
+    else if (f.type === 'number') input = '<input type="number" id="' + id + '" value="' + esc(v == null ? '' : v) + '">';
+    else if (f.type === 'select') {
+      var o = f.options();
+      var cur = v == null ? '' : String(v);
+      if (cur && !o.some(function (x) { return x[0] === cur; })) o = o.concat([[cur, cur]]);
+      input = '<select id="' + id + '">' + o.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (x[0] === cur ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select>';
+    } else input = '<input type="text" id="' + id + '" value="' + esc(v == null ? '' : v) + '"' + (f.required ? ' required' : '') + '>';
+    return '<div class="field"><label for="' + id + '">' + esc(f.label) + req + '</label>' + input + help + '</div>';
+  }
+
+  function resolveItem(path, q) {
+    var sec = SECTIONS[path];
+    if (sec.kind === 'object') return { item: getPath(path) || {}, index: null, isNew: false };
+    if (q.get('i') === 'new') return { item: {}, index: -1, isNew: true };
+    var idx = q.get('id') != null ? findIndex(path, { id: q.get('id') }) : +q.get('i');
+    var list = arr(getPath(path));
+    return idx >= 0 && idx < list.length ? { item: list[idx], index: idx, isNew: false } : null;
+  }
+
+  function editFormHTML(path, q) {
+    var sec = SECTIONS[path];
+    var res = resolveItem(path, q);
+    var back = q.get('back') || (sec.kind === 'object' ? '#/edit' : '#/edit/' + path);
+    if (!res) return '<a class="crumb" href="' + esc(back) + '">Back</a>' + pageHead('Item not found', 'It may have been deleted or changed in a newer data file.');
+    var title = res.isNew ? 'Add to ' + sec.label.toLowerCase() : (sec.kind === 'object' ? sec.label : itemTitle(sec, res.item));
+    var extra = res.item.id ? '<p class="tiny">ID: ' + esc(res.item.id) + '</p>' : '';
+    return '<a class="crumb" href="' + esc(back) + '">Back</a>' +
+      pageHead(title, res.isNew ? '' : (sec.kind === 'object' ? '' : esc(sec.label))) +
+      '<form class="panel edit-form" id="edit-form" novalidate>' + extra +
+        sec.fields.map(function (f) { return fieldHTML(f, res.item, res.isNew); }).join('') +
+        '<p class="status-line" id="ef-status" role="status" aria-live="polite"></p>' +
+        '<div class="btn-row edit-actions"><button class="btn btn-primary" type="submit">Save</button>' +
+        '<a class="btn btn-quiet" href="' + esc(back) + '">Cancel</a>' +
+        (!res.isNew && sec.kind === 'list' ? '<button class="btn btn-quiet danger" type="button" id="ef-delete">Delete</button>' : '') + '</div>' +
+      '</form>';
+  }
+
+  function readField(f, form) {
+    var el = $('#ef-' + f.k, form);
+    if (!el) return undefined;
+    if (f.type === 'check') return el.checked;
+    if (f.type === 'lines') return el.value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
+    if (f.type === 'number') return el.value === '' ? '' : +el.value;
+    return el.value.trim();
+  }
+
+  function bindEditForm(root, path, q) {
+    var form = $('#edit-form', root); if (!form) return;
+    var sec = SECTIONS[path];
+    var back = q.get('back') || (sec.kind === 'object' ? '#/edit' : '#/edit/' + path);
+
+    form.addEventListener('change', function (ev) {
+      var t = ev.target;
+      if (t.matches('[data-month-for]')) {
+        var inp = $('#' + t.getAttribute('data-month-for'), form), v = inp.value;
+        inp.type = t.checked ? 'month' : 'date';
+        if (t.checked && /^\d{4}-\d{2}-\d{2}$/.test(v)) inp.value = v.slice(0, 7);
+        else if (!t.checked && /^\d{4}-\d{2}$/.test(v)) inp.value = v + '-01';
+      }
+    });
+    form.addEventListener('click', function (ev) {
+      var c = ev.target.closest('[data-clear-for]');
+      if (c) { $('#' + c.getAttribute('data-clear-for'), form).value = ''; }
+    });
+
+    var del = $('#ef-delete', form);
+    if (del) del.addEventListener('click', function () {
+      var res = resolveItem(path, q); if (!res) return;
+      var name = itemTitle(sec, res.item);
+      if (!confirm('Delete “' + name + '”? You can undo this from the edit hub.')) return;
+      pushUndo('delete ' + name);
+      getPath(path).splice(res.index, 1);
+      persist('deleted', sec.label, name);
+      location.hash = back.indexOf('#/edit/' + path + '?') === 0 ? '#/edit/' + path : back;
+      flash('Deleted');
+    });
+
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var res = resolveItem(path, q); if (!res) return;
+      var vals = {}, pseudo = {}, missing = [];
+      sec.fields.forEach(function (f) {
+        if (f.newOnly && !res.isNew) return;
+        var v = readField(f, form);
+        if (v === undefined) return;
+        if (f.required && (v === '' || (Array.isArray(v) && !v.length))) missing.push(f.label);
+        if (f.pseudo) pseudo[f.k] = v; else vals[f.k] = v;
+      });
+      if (missing.length) { $('#ef-status', form).textContent = 'Please fill in: ' + missing.join(', '); $('#ef-status', form).style.color = 'var(--coral)'; return; }
+
+      var target = res.isNew ? {} : res.item;
+      var before = JSON.stringify(target);
+      var name = vals[sec.title] || itemTitle(sec, target);
+      pushUndo((res.isNew ? 'add ' : 'edit ') + name);
+
+      sec.fields.forEach(function (f) {
+        if (f.pseudo || !(f.k in vals)) return;
+        var v = vals[f.k];
+        var empty = v === '' || v === false || (Array.isArray(v) && !v.length);
+        if (empty && !(f.keepFalse && v === false)) {
+          if (f.type === 'date' && f.k in target && target[f.k] === null) return;
+          delete target[f.k];
+        } else target[f.k] = v;
+      });
+
+      var list;
+      if (sec.kind === 'object') {
+        var parts = path.split('.'), parent = D;
+        parts.slice(0, -1).forEach(function (p) { parent = parent[p] = parent[p] || {}; });
+        parent[parts[parts.length - 1]] = target;
+      } else if (res.isNew) {
+        list = getPath(path, true);
+        if (sec.idPrefix && !target.id) target.id = nextId(sec.idPrefix, list);
+        list.push(target);
+      }
+
+      if (path === 'correspondence') {
+        if (target.id && NOTES.statusOverrides[target.id]) { delete NOTES.statusOverrides[target.id]; saveNotes(); }
+        if (pseudo.answers) {
+          var orig = arr(D.correspondence).filter(function (c) { return c.id === pseudo.answers; })[0];
+          if (orig) { orig.status = 'answered'; orig.answeredBy = target.id; if (NOTES.statusOverrides[orig.id]) { delete NOTES.statusOverrides[orig.id]; saveNotes(); } }
+        }
+        if (res.isNew && pseudo.addEvent) {
+          D.events = arr(D.events);
+          D.events.push({ id: nextId('e', D.events), date: target.date, title: (target.direction === 'out' ? 'Sent: ' : 'Received: ') + target.subject,
+            domain: 'ehcp', summary: target.summary || '', source: target.source || 'Added in the app', confidence: 'high' });
+        }
+      }
+
+      if (!res.isNew && before === JSON.stringify(target) && !pseudo.answers) { location.hash = back; return; }
+      var ok = persist(res.isNew ? 'added' : 'edited', sec.label, name);
+      location.hash = back;
+      flash(ok ? 'Saved' : 'Couldn’t save on this phone — storage may be full or blocked');
+    });
+  }
+
+  /* Move a letter captured on this device into the case data itself */
+  function promoteCaptured(id) {
+    var c = arr(NOTES.captured).filter(function (x) { return x.id === id; })[0];
+    if (!c) return;
+    pushUndo('add ' + c.subject);
+    D.correspondence = arr(D.correspondence);
+    var entry = { id: nextId('c', D.correspondence), date: c.date, direction: c.direction, from: c.from, to: c.to, subject: c.subject,
+      summary: c.summary, status: NOTES.statusOverrides[c.id] || c.status || 'info', source: 'Captured in the app ' + fmt(todayISO()) };
+    if (c.fullText) entry.fullText = c.fullText;
+    D.correspondence.push(entry);
+    D.events = arr(D.events);
+    D.events.push({ id: nextId('e', D.events), date: c.date, title: (c.direction === 'out' ? 'Sent: ' : 'Received: ') + c.subject,
+      domain: c.domain || 'ehcp', summary: c.summary || '', source: entry.source, confidence: 'high' });
+    NOTES.captured = NOTES.captured.filter(function (x) { return x.id !== id; });
+    delete NOTES.statusOverrides[id];
+    saveNotes();
+    persist('added', 'Letters and emails', c.subject);
+    location.hash = '#/edit/correspondence?id=' + encodeURIComponent(entry.id) + '&back=' + encodeURIComponent('#/messages');
+    flash('Added to the case data — check the details');
+  }
+
 
   /* ------------------------------------------------------------------- Start */
   bindGlobal();

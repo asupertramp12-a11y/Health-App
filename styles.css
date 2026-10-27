@@ -631,3 +631,68 @@ input[type="number"] { font: inherit; color: var(--ink); background: var(--surfa
 .msg-actions { margin-top: 6px; gap: 2px; }
 .msg-actions .btn { padding: 5px 10px; font-size: 0.9rem; }
 a.chip { text-decoration: none; }
+
+/* ---------- Edit mode ---------- */
+.edit-toggle[aria-pressed="true"] { background: var(--sun); border-color: var(--sun); color: #17223B; }
+.edit-bar {
+  position: sticky; top: 70px; z-index: 9;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  margin: 4px 0 18px; padding: 10px 14px;
+  background: var(--sun-soft); border: 2px solid var(--sun); border-radius: var(--radius);
+}
+.edit-bar b { display: block; }
+.edit-bar span { font-size: 0.9rem; color: var(--ink-soft); }
+.edit-bar .btn { padding: 6px 14px; }
+.edit-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin: 6px 6px 0 0; padding: 3px 10px; border-radius: 99px;
+  font-size: 0.85rem; font-weight: 700; text-decoration: none; line-height: 1.5;
+  color: var(--ink); background: var(--sun-soft); border: 1.5px solid var(--sun);
+  vertical-align: middle;
+}
+.edit-btn .icon { width: 15px; height: 15px; }
+.edit-btn.add { background: var(--surface); border-style: dashed; color: var(--ink-soft); margin-top: 12px; }
+.edit-btn:hover { filter: brightness(0.97); }
+.tl .meta .edit-btn, .msg-actions .edit-btn { margin: 0; }
+.person .edit-btn, .gap-list .edit-btn, .conflict .edit-btn { margin-top: 10px; }
+td .edit-btn { display: flex; width: max-content; margin-top: 6px; }
+
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.quick-grid .tile { font-weight: 700; }
+.quick-grid .tile .l { color: var(--ink); }
+.fact .v.small { font-size: 1.05rem; }
+.change-log li { align-items: flex-start; }
+.change-log .when { width: 92px; }
+.edit-list li { gap: 14px; }
+.edit-list a { font-weight: 700; text-decoration: none; }
+
+.edit-form { max-width: 760px; }
+.edit-form input[type="text"], .edit-form input[type="number"], .edit-form textarea, .edit-form select { width: 100%; }
+.edit-form .tiny { margin-top: -2px; }
+.req { color: var(--coral); }
+.date-field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.date-field input[type="date"], .date-field input[type="month"] {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1.5px solid var(--line); border-radius: var(--radius-sm); padding: 9px 12px; min-width: 170px;
+}
+.mini-check, .check-line { display: inline-flex; align-items: center; gap: 8px; font-weight: 400; cursor: pointer; }
+.check-line { font-weight: 700; }
+.mini-check input, .check-line input { width: 20px; height: 20px; accent-color: var(--mint); margin: 0; }
+.btn.small { padding: 4px 10px; font-size: 0.88rem; }
+.edit-actions { position: sticky; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); background: var(--surface); padding: 12px 0 4px; }
+@media (min-width: 861px) { .edit-actions { bottom: 0; } }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(var(--tabbar-h) + 20px + env(safe-area-inset-bottom)); z-index: 60;
+  transform: translateX(-50%); max-width: calc(100vw - 32px);
+  background: var(--ink); color: var(--paper); font-weight: 700;
+  padding: 10px 18px; border-radius: 99px; box-shadow: var(--shadow);
+  transition: opacity 400ms;
+}
+.toast.out { opacity: 0; }
+@media (min-width: 861px) { .toast { bottom: 28px; } }
+@media (max-width: 860px) {
+  .edit-bar { position: static; padding: 8px 12px; margin-bottom: 14px; }
+  .edit-bar b { display: inline; margin-right: 6px; }
+  .edit-bar .btn-row { width: 100%; gap: 6px; }
+}
