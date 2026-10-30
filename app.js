@@ -86,6 +86,12 @@
     }
     return p.d >= TODAY;
   }
+  /* Still to come: a future date that hasn't been marked as done or happened. */
+  function ahead(x) {
+    if (!x) return false;
+    if (x.status === 'done' || x.status === 'cancelled' || x.happened) return false;
+    return isFuture(x.date);
+  }
   function relative(s) {
     var p = parseD(s); if (!p) return '';
     if (p.precision === 'month') {
@@ -331,6 +337,7 @@
   function upcomingItems() {
     var items = [];
     allAppointments().forEach(function (a) {
+      if (a.status === 'done' || a.status === 'cancelled') return;
       items.push({ date: a.date, label: a.title, sub: [a.time, a.with].filter(Boolean).join(', '), href: '#/prep/' + encodeURIComponent(a.id) });
     });
     arr(D.keyDates).forEach(function (k) {
@@ -359,7 +366,7 @@
       var up = upcomingItems().slice(0, 5);
       var awaiting = allCorrespondence().filter(function (m) { return m.status === 'awaiting reply'; });
       var outstanding = arr(D.ehcna && D.ehcna.adviceOutstanding);
-      var recent = allEvents().filter(function (e) { return !isFuture(e.date) && e.kind !== 'inferred'; })
+      var recent = allEvents().filter(function (e) { return !ahead(e) && e.kind !== 'inferred'; })
         .sort(function (a, b) { return sortKey(b.date) - sortKey(a.date); }).slice(0, 6);
 
       var lastCouncil = allCorrespondence().filter(function (m) { return m.direction === 'in' && /SEND|SEN Team|council/i.test(m.from); })
@@ -436,7 +443,7 @@
         var q = tlState.q.trim().toLowerCase();
         var list = allEvents().filter(function (e) {
           if (tlState.domain !== 'all' && e.domain !== tlState.domain) return false;
-          if (!tlState.upcoming && isFuture(e.date)) return false;
+          if (!tlState.upcoming && ahead(e)) return false;
           if (q) {
             var hay = [e.title, e.summary, e.source, e.evidence, arr(e.people).join(' '), fmt(e.date, true)].join(' ').toLowerCase();
             if (hay.indexOf(q) === -1) return false;
@@ -447,11 +454,11 @@
         if (!list.length) { $('#tl-body', root).innerHTML = '<p class="empty">Nothing matches. Try another word or choose All.</p>'; return; }
 
         /* Put a "Today" marker where past meets future, if both are showing. */
-        var hasPast = list.some(function (x) { return !isFuture(x.date); });
-        var hasFuture = list.some(function (x) { return isFuture(x.date); });
+        var hasPast = list.some(function (x) { return !ahead(x); });
+        var hasFuture = list.some(function (x) { return ahead(x); });
         var html = '', year = null, todayDrawn = !(hasPast && hasFuture);
         list.forEach(function (e) {
-          var future = isFuture(e.date);
+          var future = ahead(e);
           var y = parseD(e.date).d.getFullYear();
           var crossesToday = !todayDrawn && (tlState.newest ? !future : future);
           if (y !== year) {
@@ -561,7 +568,7 @@
         '</section>' +
         '<section class="panel section-gap"><div class="panel-head"><h2>Assessment events</h2><a href="#/timeline">Full timeline</a></div>' +
           '<ul class="mini-events">' + events.map(function (x) {
-            return '<li><span class="when">' + esc(fmt(x.date)) + '</span><span class="dot ' + (isFuture(x.date) ? 'family' : 'ehcp') + '"></span><span>' + esc(x.title) + (x.confidence && x.confidence !== 'high' ? ' ' + confPill(x.confidence) : '') + '</span></li>';
+            return '<li><span class="when">' + esc(fmt(x.date)) + '</span><span class="dot ' + (ahead(x) ? 'family' : 'ehcp') + '"></span><span>' + esc(x.title) + (x.confidence && x.confidence !== 'high' ? ' ' + confPill(x.confidence) : '') + '</span></li>';
           }).join('') + '</ul>' +
         '</section>';
     }
@@ -900,8 +907,8 @@
       if (r.param === 'new') return prepNewHTML();
       if (r.param) return prepDetailHTML(r.param);
       var all = allAppointments().slice().sort(function (a, b) { return sortKey(a.date) - sortKey(b.date); });
-      var next = all.filter(function (a) { return isFuture(a.date); });
-      var past = all.filter(function (a) { return !isFuture(a.date); }).reverse();
+      var next = all.filter(function (a) { return ahead(a); });
+      var past = all.filter(function (a) { return !ahead(a); }).reverse();
       function card(a, isPast) {
         var s = prepState(a.id);
         var qTotal = arr(a.questions).length - s.hiddenQ.length + s.extraQ.length;
@@ -1686,6 +1693,7 @@
       F.sel('kind', 'Type', opts([['', 'Event'], ['deadline', 'Deadline'], ['inferred', 'Worked out from other dates'], ['change', 'Change of officer']])),
       F.area('summary', 'Summary'),
       F.text('source', 'Source'),
+      F.check('happened', 'This has happened (show it as past even if dated today or later)'),
       F.sel('confidence', 'How sure', opts([['high', 'From the document itself'], ['medium', 'Secondary source'], ['low', 'Inferred']]))
     ] },
     'keyDates': { label: 'Key dates', kind: 'list', group: 'Letters and timeline', title: 'label', date: 'date', fields: [
