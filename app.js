@@ -192,7 +192,7 @@
   var ROUTES = [
     { key: 'home', label: 'Overview', icon: 'home', desc: 'Where things stand today' },
     { key: 'timeline', label: 'Timeline', icon: 'timeline', desc: 'Everything in date order' },
-    { key: 'ehcp', label: 'EHC assessment', icon: 'ehcp', desc: 'Statutory clock, advice and next steps' },
+    { key: 'ehcp', label: 'EHCP assessment', icon: 'ehcp', desc: 'Statutory clock, advice and next steps' },
     { key: 'prep', label: 'Appointment prep', icon: 'prep', desc: 'Questions, notes and what to bring' },
     { key: 'messages', label: 'Letters and emails', icon: 'messages', desc: 'Who said what, and what we’re waiting for' },
     { key: 'health', label: 'Health', icon: 'health', desc: 'Diagnoses, concerns and referrals' },
@@ -201,7 +201,7 @@
     { key: 'people', label: 'People', icon: 'people', desc: 'Professionals and contacts' },
     { key: 'evidence', label: 'Evidence check', icon: 'evidence', desc: 'Conflicts, gaps and the evidence index' }
   ];
-  var TABS = ['home', 'timeline', 'ehcp', 'prep', 'more'];
+  var TABS = ['home', 'messages', 'ehcp', 'prep', 'more'];
 
   function awaitingCount() {
     return allCorrespondence().filter(function (c) { return c.status === "awaiting reply"; }).length;
@@ -218,8 +218,8 @@
     $('#tabbar').innerHTML = TABS.map(function (k) {
       var r = k === 'more' ? { key: 'more', label: 'More', icon: 'more' } : ROUTES.filter(function (x) { return x.key === k; })[0];
       var current = k === active || (k === 'more' && inMore && active !== 'search');
-      var short = { home: 'Overview', timeline: 'Timeline', ehcp: 'EHCP', prep: 'Prep', more: 'More' }[k];
-      var badge = k === 'more' && count ? '<span class="count">' + count + '</span>' : '';
+      var short = { home: 'Overview', messages: 'Letters', ehcp: 'EHCP', prep: 'Prep', more: 'More' }[k];
+      var badge = k === 'messages' && count ? '<span class="count" aria-label="' + count + ' awaiting reply">' + count + '</span>' : '';
       return '<a href="#/' + r.key + '"' + (current ? ' aria-current="page"' : '') + '>' + icon(r.icon) + '<span>' + short + '</span>' + badge + '</a>';
     }).join('');
   }
@@ -479,8 +479,8 @@
           '<p class="age">' + esc(ageText(c.dob)) + (c.setting ? ', at ' + esc(c.setting) : '') + '</p>' +
           (c.headline ? '<p class="headline">' + esc(c.headline) + '</p>' : '') + '</div>' +
         '</section>' +
-        morningBannerHTML() +
         clockHTML() +
+        morningBannerHTML() +
         '<div class="grid grid-2 section-gap">' +
           '<section class="panel"><div class="panel-head"><h2>Coming up</h2>' + (EDIT ? '<a href="#/edit/keyDates">Key dates</a>' : '<a href="#/prep">Prep</a>') + '</div>' +
             (up.length ? '<ul class="upcoming-list">' + up.map(function (i) {
@@ -518,7 +518,7 @@
   };
 
   /* --------------------------------------------------------------- Timeline */
-  var tlState = { domain: 'all', q: '', upcoming: true, newest: true };
+  var tlState = { domain: 'all', q: '', upcoming: true, newest: true, open: {} };
 
   VIEWS.timeline = {
     html: function () {
@@ -556,15 +556,22 @@
         /* Put a "Today" marker where past meets future, if both are showing. */
         var hasPast = list.some(function (x) { return !ahead(x); });
         var hasFuture = list.some(function (x) { return ahead(x); });
-        var html = '', year = null, todayDrawn = !(hasPast && hasFuture);
+        var html = '', year = null, todayDrawn = !(hasPast && hasFuture), inGroup = false;
+        var thisYear = TODAY.getFullYear(), perYear = {};
+        list.forEach(function (x) { var yy = parseD(x.date).d.getFullYear(); perYear[yy] = (perYear[yy] || 0) + 1; });
+        function closeYear() { html += '</ol>' + (inGroup ? '</details>' : ''); inGroup = false; }
         list.forEach(function (e) {
           var future = ahead(e);
           var y = parseD(e.date).d.getFullYear();
           var crossesToday = !todayDrawn && (tlState.newest ? !future : future);
           if (y !== year) {
-            if (year !== null) html += '</ol>';
+            if (year !== null) closeYear();
             if (crossesToday) { html += '<p class="today-line">Today, ' + esc(fmt(todayISO())) + '</p>'; todayDrawn = true; crossesToday = false; }
-            html += '<div class="year"><h2>' + y + '</h2></div><ol class="tl">';
+            if (y < thisYear && !q) {   // earlier years fold away; searching opens everything
+              inGroup = true;
+              html += '<details class="year-group" data-year="' + y + '"' + (tlState.open[y] ? ' open' : '') + '><summary class="year"><h2>' + y + '</h2>' +
+                '<span class="year-count">' + perYear[y] + (perYear[y] === 1 ? ' event' : ' events') + '</span></summary><ol class="tl">';
+            } else html += '<div class="year"><h2>' + y + '</h2></div><ol class="tl">';
             year = y;
           }
           if (crossesToday) {
@@ -588,7 +595,7 @@
             sourceLine(e.source) +
           '</article></li>';
         });
-        if (year !== null) html += '</ol>';
+        if (year !== null) closeYear();
         $('#tl-body', root).innerHTML = html;
       }
 
@@ -603,6 +610,9 @@
       $('#tl-up', root).addEventListener('click', function (ev) {
         tlState.upcoming = !tlState.upcoming; ev.currentTarget.setAttribute('aria-pressed', String(tlState.upcoming)); draw();
       });
+      $('#tl-body', root).addEventListener('toggle', function (ev) {
+        var g = ev.target; if (g.classList && g.classList.contains('year-group')) tlState.open[g.getAttribute('data-year')] = g.open;
+      }, true);
       $('#tl-sort', root).addEventListener('click', function (ev) {
         tlState.newest = !tlState.newest; ev.currentTarget.innerHTML = '<span class="visually-hidden">Order: </span>' + (tlState.newest ? 'Newest first' : 'Oldest first'); draw();
       });
@@ -1101,13 +1111,13 @@
         (a.local ? '<button class="btn btn-quiet danger" type="button" id="remove-appt">Remove this appointment</button>' : '') + eb('appointments', a, 'Edit appointment details') + '</div>' +
       '</header>' +
       '<div class="grid grid-2">' +
-        '<section class="panel"><h2>What’s on file</h2>' +
+        '<section class="panel prep-context"><h2>What’s on file</h2>' +
           (arr(a.context).length ? '<ul>' + a.context.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '<p class="empty">Nothing added yet.</p>') +
           (related.length ? '<h3 class="section-gap">Recent related events</h3><ul class="mini-events">' + related.map(function (e) {
             return '<li><span class="when">' + esc(fmt(e.date)) + '</span><span>' + esc(e.title) + '</span></li>';
           }).join('') + '</ul>' : '') +
         '</section>' +
-        '<section class="panel"><h2>Questions to ask</h2>' + checks(questions, 'q', s.checkedQ) +
+        '<section class="panel prep-questions"><h2>Questions to ask</h2>' + checks(questions, 'q', s.checkedQ) +
           '<form class="add-row no-print" data-add="q"><label class="visually-hidden" for="add-q">Add a question</label><input type="text" id="add-q" placeholder="Add a question"><button class="btn btn-secondary" type="submit">Add</button></form>' +
           '<h3 class="section-gap">Take with you</h3>' + checks(bring, 'b', s.checkedB) +
           '<form class="add-row no-print" data-add="b"><label class="visually-hidden" for="add-b">Add something to take</label><input type="text" id="add-b" placeholder="Add something to take"><button class="btn btn-secondary" type="submit">Add</button></form>' +
@@ -1289,7 +1299,7 @@
     var realToday = new URLSearchParams(location.search).get('today') ? 7 : now.getHours();
     if (realToday < 6) return '';
     if (sleepFor(lastNightISO())) return '';
-    return '<section class="morning-banner"><div><h2>How was last night?</h2><p>' + esc(nightLabel(lastNightISO())) + ' isn’t in the sleep diary yet.</p></div>' +
+    return '<section class="morning-banner" aria-label="Sleep diary"><div><h2>How was last night?</h2><p>' + esc(nightLabel(lastNightISO())) + ' isn’t in the diary yet.</p></div>' +
       '<div class="btn-row"><button class="btn btn-secondary" type="button" data-quick-sleep="' + lastNightISO() + '">Slept through</button>' +
       '<a class="btn btn-primary" href="#/support/sleep-new?night=' + lastNightISO() + '">She woke up</a></div></section>';
   }
@@ -1852,6 +1862,7 @@
     });
 
     window.addEventListener('hashchange', onRoute);
+    window.addEventListener('beforeprint', function () { $all('details.year-group').forEach(function (d) { d.open = true; }); });
   }
 
   /* ------------------------------------------------------------ Edit mode
@@ -1878,7 +1889,7 @@
   };
 
   var SECTIONS = {
-    'ehcna': { label: 'Assessment status and dates', kind: 'object', group: 'EHC assessment', fields: [
+    'ehcna': { label: 'Assessment status and dates', kind: 'object', group: 'EHCP assessment', fields: [
       F.text('status', 'Current status (shown on the clock)', { required: true }),
       F.text('team', 'SEN team to write to', { help: 'Used when no case officer is named.' }),
       F.date('requestInferred', 'Request received by the council', { help: 'The 20-week clock starts here.' }),
@@ -1894,23 +1905,23 @@
       F.lines('waitingOn', 'Waiting for answers on', { help: 'One per line. Delete a line once it’s answered.' }),
       F.text('waitingOnSource', 'Asked in (letter or email)')
     ] },
-    'ehcna.stages': { label: 'Assessment stages', kind: 'list', group: 'EHC assessment', title: 'label', fields: [
+    'ehcna.stages': { label: 'Assessment stages', kind: 'list', group: 'EHCP assessment', title: 'label', fields: [
       F.text('label', 'Stage', { required: true }),
       F.date('date', 'Date'),
       F.sel('state', 'State', opts([['done', 'Done'], ['current', 'Happening now'], ['todo', 'Still to come'], ['late', 'Late']])),
       F.text('note', 'Note'),
       F.check('inferred', 'Date is worked out, not confirmed')
     ] },
-    'ehcna.adviceReceived': { label: 'Advice received', kind: 'list', group: 'EHC assessment', title: 'label', fields: [
+    'ehcna.adviceReceived': { label: 'Advice received', kind: 'list', group: 'EHCP assessment', title: 'label', fields: [
       F.text('label', 'Advice', { required: true }), F.text('source', 'Source')
     ] },
-    'ehcna.adviceOutstanding': { label: 'Advice outstanding or not held', kind: 'list', group: 'EHC assessment', title: 'label', fields: [
+    'ehcna.adviceOutstanding': { label: 'Advice outstanding or not held', kind: 'list', group: 'EHCP assessment', title: 'label', fields: [
       F.text('label', 'Advice', { required: true }), F.area('detail', 'Detail'), F.text('source', 'Source')
     ] },
-    'ehcna.officers': { label: 'Who holds the case', kind: 'list', group: 'EHC assessment', title: 'name', fields: [
+    'ehcna.officers': { label: 'Who holds the case', kind: 'list', group: 'EHCP assessment', title: 'name', fields: [
       F.text('name', 'Name', { required: true }), F.text('role', 'Role'), F.date('from', 'From'), F.date('to', 'To', { help: 'Leave empty if they still hold the case.' }), F.area('note', 'Note')
     ] },
-    'ehcna.commitmentsFromLetters': { label: 'What the council committed to', kind: 'list', group: 'EHC assessment', title: 'commitment', date: 'date', fields: [
+    'ehcna.commitmentsFromLetters': { label: 'What the council committed to', kind: 'list', group: 'EHCP assessment', title: 'commitment', date: 'date', fields: [
       F.date('date', 'Letter date'), F.area('commitment', 'What they said they would do', { required: true }), F.area('position', 'Where it stands now'), F.text('source', 'Source')
     ] },
     'correspondence': { label: 'Letters and emails', kind: 'list', group: 'Letters and timeline', idPrefix: 'c', title: 'subject', date: 'date', fields: [

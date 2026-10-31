@@ -748,3 +748,18 @@ p.clock-big { margin: 0; }
 .btn-sun-quiet:hover { background: rgba(255, 194, 51, 0.12); }
 @media print { .clock-act .btn { display: none; } }
 @media (prefers-color-scheme: dark) { .ticklist .mark.q { color: var(--sun); } }
+
+/* ---------------------------------------------------------- Phone layout */
+.clock + .morning-banner { margin-top: 14px; }
+.morning-banner { padding: 12px 16px; }
+.morning-banner h2 { font-size: 1.02rem; }
+.morning-banner .btn { padding-top: 8px; padding-bottom: 8px; }
+.year-group > summary { list-style: none; cursor: pointer; min-height: 44px; }
+.year-group > summary::-webkit-details-marker { display: none; }
+.year-group > summary::before { content: ""; flex: none; width: 9px; height: 9px; margin: 0 2px 0 4px; border-right: 2.5px solid var(--ink-soft); border-bottom: 2.5px solid var(--ink-soft); transform: rotate(-45deg); transition: transform 150ms; }
+.year-group[open] > summary::before { transform: rotate(45deg); }
+.year-count { order: 3; flex: none; font-weight: 700; font-size: 0.9rem; color: var(--ink-soft); }
+.year-group > summary:focus-visible { outline: 3px solid var(--sky); outline-offset: 4px; border-radius: 8px; }
+@media (prefers-reduced-motion: reduce) { .year-group > summary::before { transition: none; } }
+.checks .del { min-width: 44px; min-height: 44px; margin: -10px -10px -10px 8px; display: grid; place-items: center; font-size: 1.3rem; }
+@media (max-width: 860px) { .prep-questions { order: -1; } }
