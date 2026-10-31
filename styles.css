@@ -48,8 +48,8 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+/* Dark theme: off unless <html data-theme="dark"> is set. */
+:root[data-theme="dark"] {
     --paper: #121A2E;
     --surface: #1A2440;
     --surface-2: #22304F;
@@ -75,7 +75,7 @@
     --shadow: 0 1px 0 rgba(0, 0, 0, 0.2), 0 10px 28px -18px rgba(0, 0, 0, 0.8);
     color-scheme: dark;
   }
-}
+
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -218,7 +218,9 @@ main:focus { outline: none; }
 .pill.sun { background: var(--sun-soft); color: #8A5D00; }
 .pill.sky { background: var(--sky-soft); color: var(--sky-text); }
 .pill.lilac { background: var(--lilac-soft); color: var(--lilac-text); }
-@media (prefers-color-scheme: dark) { .pill.sun { color: var(--sun); } }
+/* Dark theme: off unless <html data-theme="dark"> is set. */
+:root[data-theme="dark"] .pill.sun { color: var(--sun); }
+
 
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; background: var(--slate); }
 .dot.ehcp { background: var(--d-ehcp); }
@@ -267,7 +269,9 @@ main:focus { outline: none; }
   border-radius: var(--radius-lg); padding: 24px 24px 22px;
   position: relative; overflow: hidden;
 }
-@media (prefers-color-scheme: dark) { .clock { background: #0B1222; border: 1px solid var(--line); } }
+/* Dark theme: off unless <html data-theme="dark"> is set. */
+:root[data-theme="dark"] .clock { background: #0B1222; border: 1px solid var(--line); }
+
 .clock-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px 24px; }
 .clock h2 { color: #fff; margin: 0 0 4px; font-size: 1.15rem; font-weight: 700; }
 .clock .status { color: #C9D4EC; margin: 0; }
@@ -328,7 +332,9 @@ main:focus { outline: none; }
 .tile .l { font-weight: 700; font-size: 0.95rem; color: var(--ink-soft); }
 .tile.coral .n { color: var(--coral-text); }
 .tile.sun .n { color: #B07A00; }
-@media (prefers-color-scheme: dark) { .tile.sun .n { color: var(--sun); } }
+/* Dark theme: off unless <html data-theme="dark"> is set. */
+:root[data-theme="dark"] .tile.sun .n { color: var(--sun); }
+
 
 /* ---------- Filters ---------- */
 .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; align-items: center; }
@@ -366,7 +372,9 @@ main:focus { outline: none; }
 .tl h3 { margin: 0 0 4px; font-family: var(--font-body); font-size: 1.05rem; }
 .tl p { margin: 0; color: var(--ink-soft); }
 .today-line { position: relative; padding-left: 34px; margin: 6px 0 20px; font-weight: 700; color: #8A5D00; }
-@media (prefers-color-scheme: dark) { .today-line { color: var(--sun); } }
+/* Dark theme: off unless <html data-theme="dark"> is set. */
+:root[data-theme="dark"] .today-line { color: var(--sun); }
+
 .today-line::before { content: ""; position: absolute; left: 0; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; background: var(--sun); box-shadow: 0 0 0 4px var(--paper); }
 
 /* ---------- EHCP ---------- */
@@ -412,7 +420,9 @@ main:focus { outline: none; }
 .dir { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; }
 .dir.in { background: var(--sky-soft); color: var(--sky-text); }
 .dir.out { background: var(--sun-soft); color: #8A5D00; }
-@media (prefers-color-scheme: dark) { .dir.out { color: var(--sun); } }
+/* Dark theme: off unless <html data-theme="dark"> is set. */
+:root[data-theme="dark"] .dir.out { color: var(--sun); }
+
 .msg .row1 { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .msg .who { font-weight: 700; }
 .msg .when { color: var(--ink-faint); font-size: 0.9rem; }
@@ -725,9 +735,9 @@ td .edit-btn { display: flex; width: max-content; margin-top: 6px; }
 .undo-row span { flex: 1; }
 .draft-note { margin: 0 0 12px; font-size: 0.9rem; color: var(--ink-soft); }
 .draft-note:empty { display: none; }
-@media (prefers-color-scheme: dark) {
-  .backup-note.warn, .backup-side.warn { color: var(--sun); }
-}
+/* Dark theme: off unless <html data-theme="dark"> is set. */
+:root[data-theme="dark"] .backup-note.warn, :root[data-theme="dark"] .backup-side.warn { color: var(--sun); }
+
 @media print { .undo-row { display: none !important; } }
 
 /* ------------------------------------------------- Clock: checks and next steps */
@@ -747,7 +757,9 @@ p.clock-big { margin: 0; }
 .btn-sun-quiet { background: transparent; color: var(--sun); box-shadow: inset 0 0 0 1.5px var(--sun); }
 .btn-sun-quiet:hover { background: rgba(255, 194, 51, 0.12); }
 @media print { .clock-act .btn { display: none; } }
-@media (prefers-color-scheme: dark) { .ticklist .mark.q { color: var(--sun); } }
+/* Dark theme: off unless <html data-theme="dark"> is set. */
+:root[data-theme="dark"] .ticklist .mark.q { color: var(--sun); }
+
 
 /* ---------------------------------------------------------- Phone layout */
 .clock + .morning-banner { margin-top: 14px; }
