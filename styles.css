@@ -763,3 +763,8 @@ p.clock-big { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .year-group > summary::before { transition: none; } }
 .checks .del { min-width: 44px; min-height: 44px; margin: -10px -10px -10px 8px; display: grid; place-items: center; font-size: 1.3rem; }
 @media (max-width: 860px) { .prep-questions { order: -1; } }
+
+/* ---------------------------------------------------------- Polish */
+.fact .v small { font-family: var(--font-body); font-size: 0.8rem; font-weight: 700; color: var(--ink-soft); }
+::selection { background: var(--sun-soft); color: var(--ink); }
+input, textarea { caret-color: var(--sky); }

@@ -1,5 +1,6 @@
 /* Family Hub — app logic
-   Plain JavaScript, no build step. Reads window.CASE_DATA from data/case-data.js.
+   Plain JavaScript, no build step. Case data comes from a case-data.json file the family loads on
+   each device (kept in this browser's localStorage); nothing personal is stored in this code.
    Personal notes and added appointments are kept in this browser's localStorage.
    Edit mode (pencil button) changes the case data itself; see “Edit mode” below. */
 (function () {
@@ -235,6 +236,7 @@
   var VIEWS = {};
 
   function render() {
+    var et = $('.topbar .edit-toggle'); if (et) et.hidden = !D;
     $all('.brand-name').forEach(function (el) { el.textContent = appName(); });
     $all('a.brand').forEach(function (el) { el.setAttribute('aria-label', appName() + ' home'); });
     if (!D) {
@@ -469,7 +471,13 @@
       var recent = allEvents().filter(function (e) { return !ahead(e) && e.kind !== 'inferred'; })
         .sort(function (a, b) { return sortKey(b.date) - sortKey(a.date); }).slice(0, 6);
 
-      var lastCouncil = allCorrespondence().filter(function (m) { return m.direction === 'in' && /SEND|SEN Team|council/i.test(m.from); })
+      var officerNames = arr(D.ehcna && D.ehcna.officers).map(function (o) { return String(o.name || '').toLowerCase(); }).filter(function (n) { return n.length > 3; });
+      var councilWord = council().toLowerCase().replace(/ council$/, '');
+      var lastCouncil = allCorrespondence().filter(function (m) {
+        var f = String(m.from || '').toLowerCase();
+        return m.direction === 'in' && (/send|sen team|council/.test(f) || (councilWord.length > 3 && f.indexOf(councilWord) !== -1) ||
+          officerNames.some(function (n) { return f.indexOf(n) !== -1; }));
+      })
         .sort(function (a, b) { return sortKey(b.date) - sortKey(a.date); })[0];
 
       return '' +
@@ -510,7 +518,7 @@
               '<a class="tile coral" href="#/evidence/conflicts"><span class="n">' + arr(D.conflicts).length + '</span><span class="l">Conflicting records</span></a>' +
               '<a class="tile sun" href="#/evidence/gaps"><span class="n">' + arr(D.gaps).length + '</span><span class="l">Missing documents</span></a>' +
               '<a class="tile" href="#/messages?f=awaiting"><span class="n">' + awaiting.length + '</span><span class="l">Awaiting a reply</span></a>' +
-              '<a class="tile" href="#/messages"><span class="n">' + (lastCouncil ? Math.max(0, dayDiff(parseD(lastCouncil.date).d, TODAY)) : '–') + '</span><span class="l">Days since council last wrote</span></a>' +
+              '<a class="tile" href="#/messages"><span class="n">' + (lastCouncil ? Math.max(0, dayDiff(parseD(lastCouncil.date).d, TODAY)) : '–') + '</span><span class="l">' + (lastCouncil ? 'Days since council last wrote' : 'No council letters on file yet') + '</span></a>' +
             '</div>' +
           '</section>' +
         '</div>';
@@ -521,7 +529,8 @@
   var tlState = { domain: 'all', q: '', upcoming: true, newest: true, open: {} };
 
   VIEWS.timeline = {
-    html: function () {
+    html: function (r) {
+      if (r && r.query && r.query.get('q') !== null) { tlState.q = r.query.get('q'); tlState.domain = 'all'; }
       var domains = Object.keys(D.domains || {});
       var chips = '<button class="chip" type="button" data-domain="all" aria-pressed="' + (tlState.domain === 'all') + '">All</button>' +
         domains.map(function (k) {
@@ -637,7 +646,7 @@
           '<div class="fact"><span class="k">Decision to assess</span><span class="v">' + esc(fmt(e.decisionToAssess)) + '</span></div>' +
           '<div class="fact"><span class="k">Final EHCP ' + (daysOver > 0 ? 'was due' : 'due') + '</span><span class="v">' + esc(cm ? fmt(isoDate(cm.dueD)) : fmt(e.finalDue)) + '</span></div>' +
           '<div class="fact alert"><span class="k">' + (daysOver > 0 ? 'Days overdue' : 'Days remaining') + '</span><span class="v">' + Math.abs(daysOver) + '</span></div>' +
-          '<div class="fact"><span class="k">Weeks since request' + (requestIsInferred() ? ' (approx.)' : '') + '</span><span class="v">' + weeks + ' of ' + (e.weeksAllowed || 20) + '</span></div>' +
+          '<div class="fact"><span class="k">Weeks since request' + (requestIsInferred() ? ' (approx.)' : '') + '</span><span class="v">' + weeks + ' <small>weeks · limit ' + (e.weeksAllowed || 20) + '</small></span></div>' +
         '</div>' +
         '<section class="panel section-gap"><div class="panel-head"><h2>Where the assessment is</h2>' + (EDIT ? '<a href="#/edit/ehcna.stages">Edit stages</a>' : '') + '</div>' +
           '<ol class="stepper">' + arr(e.stages).map(function (s) {
@@ -1633,7 +1642,7 @@
       var hay = (title + ' ' + body).toLowerCase();
       if (hay.indexOf(needle) !== -1) out.push({ kind: kind, title: title, body: body, href: href, date: date });
     }
-    arr(D.events).forEach(function (e) { add('Timeline', e.title, [fmt(e.date), e.summary, arr(e.people).join(', '), e.source].join(' — '), '#/timeline', e.date); });
+    arr(D.events).forEach(function (e) { add('Timeline', e.title, [fmt(e.date), e.summary, arr(e.people).join(', '), e.source].join(' — '), '#/timeline?q=' + encodeURIComponent(e.title), e.date); });
     allCorrespondence().forEach(function (m) { add('Letter', m.subject, [fmt(m.date), m.from, m.to, m.summary, m.fullText || ''].join(' — '), '#/messages', m.date); });
     allAppointments().forEach(function (a) { add('Appointment', a.title, [fmt(a.date), a.with, arr(a.context).join(' ')].join(' — '), '#/prep/' + encodeURIComponent(a.id), a.date); });
     arr(D.people).forEach(function (p) { add('Person', p.name, [p.role, p.org, p.email, p.phone, p.note].filter(Boolean).join(' — '), '#/people'); });
