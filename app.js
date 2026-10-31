@@ -309,51 +309,110 @@
     return '<span class="pill ' + m[0] + '">' + m[1] + '</span>';
   }
 
-  /* The statutory clock */
-  function clockHTML() {
+  /* The statutory clock.
+     clockModel works out the period and checks the dates add up; clockHTML draws it.
+     The full clock (big number) lives on the Overview; the EHCP page shows the bar only. */
+  function clockIssues(e) {
+    var out = [], start = parseD(e && e.requestInferred), due = parseD(e && e.finalDue), dec = parseD(e && e.decisionToAssess);
+    var weeks = +(e && e.weeksAllowed) || 20;
+    if (!start) return out;
+    if (!due) out.push('there is no due date');
+    else if (due.d <= start.d) out.push('the due date (' + fmt(e.finalDue) + ') is on or before the request date (' + fmt(e.requestInferred) + ')');
+    else if (!e.exceptionApplied && Math.abs(dayDiff(start.d, due.d) - weeks * 7) > 7)
+      out.push('the due date is ' + Math.round(dayDiff(start.d, due.d) / 7) + ' weeks after the request, not ' + weeks);
+    if (dec && dec.d < start.d) out.push('the decision to assess (' + fmt(e.decisionToAssess) + ') is before the request');
+    return out;
+  }
+  function clockModel() {
     var e = D.ehcna || {};
-    var start = parseD(e.requestInferred), due = parseD(e.finalDue), decision = parseD(e.decisionToAssess);
-    if (!start || !due) return '';
-    var startD = start.d, dueD = due.d;
+    var start = parseD(e.requestInferred); if (!start) return null;
+    var weeks = +e.weeksAllowed || 20, given = parseD(e.finalDue);
+    var computed = !given || given.d <= start.d;   // unusable due date: fall back to request + 20 weeks
+    var dueD = computed ? new Date(start.d.getTime() + weeks * 7 * DAY) : given.d;
     var overdue = TODAY > dueD;
+    return { e: e, startD: start.d, dueD: dueD, computed: computed, overdue: overdue, weeks: weeks,
+      daysOver: dayDiff(dueD, TODAY), daysLeft: dayDiff(TODAY, dueD), weeksSince: Math.floor(dayDiff(start.d, TODAY) / 7), issues: clockIssues(e) };
+  }
+  function caseHolder() {
+    var cur = arr(D.ehcna && D.ehcna.officers).filter(function (o) { return !o.to && o.name && o.name !== 'Not yet named'; }).pop();
+    var p = cur && arr(D.people).filter(function (x) { return x.name === cur.name; })[0];
+    return { name: cur ? cur.name : senTeam(), email: p && p.email, named: !!cur };
+  }
+  function chaseEmailText(m) {
+    var e = m.e, h = caseHolder(), ref = (D.meta && D.meta.laReference) || '';
+    var c = D.child || {}, who = c.name || kid();
+    var asks = ['the date the final EHC plan (or the decision not to issue one) will be sent to us', 'what is causing the delay, and what is being done about it']
+      .concat(arr(e.waitingOn).slice(0, 4).map(function (q) { q = String(q).trim().replace(/[.?]$/, ''); return /^[A-Z][a-z]/.test(q) ? q.charAt(0).toLowerCase() + q.slice(1) : q; }));
+    return 'Subject: EHC needs assessment for ' + who + (ref ? ' (ref ' + ref + ')' : '') + '\n\n' +
+      'Dear ' + (h.named ? h.name : 'SEN team') + ',\n\n' +
+      'The EHC needs assessment for ' + who + ' was requested ' + (requestIsInferred() ? 'on or around ' : 'on ') + fmt(e.requestInferred, true) + '. ' +
+      'The final EHC plan was due by ' + fmt(isoDate(m.dueD), true) + ', ' + m.daysOver + ' days ago' + (e.exceptionApplied ? '' : ', and we have not been told of any statutory exception') + '.\n\n' +
+      'Please could you tell us:\n' + asks.map(function (a) { return '- ' + a; }).join('\n') + '\n\n' +
+      'Kind regards,\n' + carers().filter(function (x) { return !/^Parent \d$/.test(x); }).join(' and ');
+  }
+  function clockActHTML(m) {
+    if (!m.overdue) return '';
+    var h = caseHolder(), ref = esc((D.meta && D.meta.laReference) || '');
+    return '<div class="clock-act">' +
+      '<h3>What you can do</h3>' +
+      '<ol>' +
+        '<li><b>Chase in writing.</b> Write to ' + esc(h.name) + (h.email ? ' (<a href="mailto:' + esc(h.email) + '">' + esc(h.email) + '</a>)' : '') +
+          (ref ? ', quote ref ' + ref : '') + ' and ask for the date the final plan will be issued. ' +
+          '<button type="button" class="btn btn-sun-quiet no-print" data-action="copy-chase">Copy chase email</button></li>' +
+        '<li><b>No clear answer?</b> Make a formal complaint through ' + esc(council().replace(/^The /, 'the ')) + '’s complaints process.</li>' +
+        '<li><b>Still not resolved?</b> Complain to the <a href="https://www.lgo.org.uk/" target="_blank" rel="noopener">Local Government and Social Care Ombudsman</a>.</li>' +
+      '</ol></div>';
+  }
+  function clockHTML(opts) {
+    opts = opts || {};
+    var m = clockModel(); if (!m) return '';
+    var e = m.e, startD = m.startD, dueD = m.dueD, overdue = m.overdue;
     var end = overdue ? TODAY : dueD;
     var span = Math.max(1, end - startD);
     var allowedPct = Math.min(100, ((dueD - startD) / span) * 100);
     var overPct = overdue ? 100 - allowedPct : 0;
     var todayPct = Math.min(100, Math.max(0, ((TODAY - startD) / span) * 100));
-    var decisionPct = decision ? ((decision.d - startD) / span) * 100 : null;
-    var daysOver = dayDiff(dueD, TODAY);
-    var weeksSince = Math.floor(dayDiff(startD, TODAY) / 7);
+    var decision = parseD(e.decisionToAssess);
+    var decisionPct = decision && decision.d >= startD ? Math.min(100, ((decision.d - startD) / span) * 100) : null;
+    var daysOver = m.daysOver;
 
     var big = overdue
       ? daysOver + '<small>' + (daysOver === 1 ? 'day' : 'days') + ' past the statutory date</small>'
-      : dayDiff(TODAY, dueD) + '<small>days until the statutory date</small>';
+      : m.daysLeft + '<small>days until the statutory date</small>';
 
-    function short(s) { var p = parseD(s); return p ? p.d.getDate() + ' ' + MONTHS[p.d.getMonth()] : ''; }
+    function shortD(d) { return d.getDate() + ' ' + MONTHS[d.getMonth()]; }
     var labels = '' +
       '<span class="track-mark" style="left:0"></span>' +
-      '<span class="track-label start" style="left:0"><b>Request</b> ' + (requestIsInferred() ? '~' : '') + esc(short(e.requestInferred)) + '</span>' +
-      (decisionPct !== null ? '<span class="track-mark" style="left:' + decisionPct.toFixed(2) + '%"></span><span class="track-label mid" style="left:' + decisionPct.toFixed(2) + '%"><b>Decision</b> ' + esc(short(e.decisionToAssess)) + '</span>' : '') +
+      '<span class="track-label start" style="left:0"><b>Request</b> ' + (requestIsInferred() ? '~' : '') + esc(shortD(startD)) + '</span>' +
+      (decisionPct !== null ? '<span class="track-mark" style="left:' + decisionPct.toFixed(2) + '%"></span><span class="track-label mid" style="left:' + decisionPct.toFixed(2) + '%"><b>Decision</b> ' + esc(shortD(decision.d)) + '</span>' : '') +
       '<span class="track-mark" style="left:' + allowedPct.toFixed(2) + '%"></span>' +
-      '<span class="track-label' + (overdue ? '' : ' end') + '" style="left:' + allowedPct.toFixed(2) + '%"><b>Due</b> ' + esc(short(e.finalDue)) + '</span>' +
+      '<span class="track-label' + (overdue ? '' : ' end') + '" style="left:' + allowedPct.toFixed(2) + '%"><b>Due</b> ' + esc(shortD(dueD)) + (m.computed ? ' (20 wks)' : '') + '</span>' +
       (overdue ? '<span class="track-mark today" style="left:calc(' + todayPct.toFixed(2) + '% - 4px)"></span><span class="track-label end today" style="left:' + todayPct.toFixed(2) + '%"><b>Today</b></span>' : '');
 
+    var warn = m.issues.length ? '<p class="clock-warn" role="note"><b>These dates don’t add up:</b> ' + esc(m.issues.join('; ')) + '.' +
+      (m.computed ? ' The clock is using ' + m.weeks + ' weeks from the request instead.' : '') +
+      ' <a href="#/edit/ehcna">Check the dates</a></p>' : '';
+
     return '' +
-      '<section class="clock" aria-labelledby="clock-title">' +
-        '<div class="clock-top">' +
-          '<div><h2 id="clock-title">EHC needs assessment</h2><p class="status">' + esc(e.status || '') + '</p></div>' +
-          '<div class="clock-big" aria-live="off">' + big + '</div>' +
-        '</div>' +
-        '<div class="track" role="img" aria-label="20-week statutory period from ' + (requestIsInferred() ? 'about ' : '') + esc(fmt(e.requestInferred, true)) + ' to ' + esc(fmt(e.finalDue, true)) + (overdue ? ', now ' + daysOver + ' days over' : '') + '">' +
+      '<section class="clock' + (opts.compact ? ' compact' : '') + '" aria-labelledby="clock-title">' +
+        (opts.compact
+          ? '<h2 id="clock-title">The 20-week clock</h2>'
+          : '<div class="clock-top">' +
+              '<div><h2 id="clock-title">EHC needs assessment</h2><p class="status">' + esc(e.status || '') + '</p></div>' +
+              '<p class="clock-big">' + big + '</p>' +
+            '</div>') +
+        warn +
+        '<div class="track" role="img" aria-label="' + m.weeks + '-week statutory period from ' + (requestIsInferred() ? 'about ' : '') + esc(fmt(isoDate(startD), true)) + ' to ' + esc(fmt(isoDate(dueD), true)) + (overdue ? ', now ' + daysOver + ' days over' : '') + '">' +
           '<div class="track-bar"><span class="track-allowed" style="width:' + allowedPct.toFixed(2) + '%"></span>' +
           (overdue ? '<span class="track-over" style="width:' + overPct.toFixed(2) + '%"></span>' : '') + '</div>' +
           labels +
         '</div>' +
         '<div class="clock-foot">' +
-          '<span>Week ' + weeksSince + ' since the request (limit: ' + (e.weeksAllowed || 20) + ')</span>' +
+          '<span>Week ' + m.weeksSince + ' since the request (limit: ' + m.weeks + ')</span>' +
           '<span>' + (e.exceptionApplied ? 'Statutory exception applied' : 'No statutory exception applied') + '</span>' +
-          '<a href="#/ehcp">See the full assessment</a>' +
+          (opts.compact ? '' : '<a href="#/ehcp">See the full assessment</a>') +
         '</div>' +
+        clockActHTML(m) +
       '</section>';
   }
 
@@ -414,7 +473,7 @@
 
       return '' +
         '<section class="hello">' +
-          '<div class="avatar" aria-hidden="true">' + esc((c.shortName || 'D').charAt(0)) + '</div>' +
+          '<div class="avatar" aria-hidden="true">' + esc(kid().charAt(0).toUpperCase()) + '</div>' +
           '<div><h1>' + esc(c.shortName || c.name || 'Overview') + '</h1>' +
           '<p class="age">' + esc(ageText(c.dob)) + (c.setting ? ', at ' + esc(c.setting) : '') + '</p>' +
           (c.headline ? '<p class="headline">' + esc(c.headline) + '</p>' : '') + '</div>' +
@@ -555,8 +614,8 @@
   VIEWS.ehcp = {
     html: function () {
       var e = D.ehcna || {};
-      var due = parseD(e.finalDue), start = parseD(e.requestInferred);
-      var daysOver = due ? dayDiff(due.d, TODAY) : 0;
+      var cm = clockModel(), start = parseD(e.requestInferred);
+      var daysOver = cm ? cm.daysOver : 0;
       var weeks = start ? Math.floor(dayDiff(start.d, TODAY) / 7) : '–';
       var events = allEvents().filter(function (x) { return x.domain === 'ehcp'; })
         .sort(function (a, b) { return sortKey(a.date) - sortKey(b.date); });
@@ -565,7 +624,7 @@
         (EDIT ? '<div class="btn-row" style="margin-bottom:12px">' + objLink('ehcna', 'Edit status and dates') + '</div>' : '') +
         '<div class="facts">' +
           '<div class="fact"><span class="k">Decision to assess</span><span class="v">' + esc(fmt(e.decisionToAssess)) + '</span></div>' +
-          '<div class="fact"><span class="k">Final EHCP was due</span><span class="v">' + esc(fmt(e.finalDue)) + '</span></div>' +
+          '<div class="fact"><span class="k">Final EHCP ' + (daysOver > 0 ? 'was due' : 'due') + '</span><span class="v">' + esc(cm ? fmt(isoDate(cm.dueD)) : fmt(e.finalDue)) + '</span></div>' +
           '<div class="fact alert"><span class="k">' + (daysOver > 0 ? 'Days overdue' : 'Days remaining') + '</span><span class="v">' + Math.abs(daysOver) + '</span></div>' +
           '<div class="fact"><span class="k">Weeks since request' + (requestIsInferred() ? ' (approx.)' : '') + '</span><span class="v">' + weeks + ' of ' + (e.weeksAllowed || 20) + '</span></div>' +
         '</div>' +
@@ -577,7 +636,7 @@
           }).join('') + '</ol>' +
           (e.expectedOutcome ? '<div class="note-box section-gap"><p><b>Expected next:</b> ' + esc(e.expectedOutcome) + '</p></div>' : '') +
         '</section>' +
-        '<div class="section-gap">' + clockHTML() + '</div>' +
+        '<div class="section-gap">' + clockHTML({ compact: true }) + '</div>' +
         '<div class="grid grid-2 section-gap">' +
           '<section class="panel"><h2>Advice received</h2><ul class="ticklist">' +
             arr(e.adviceReceived).map(function (a) { return '<li><span class="mark yes">✓</span><div>' + esc(a.label) + '<p class="source">' + esc(a.source) + '</p>' + eb('ehcna.adviceReceived', a) + '</div></li>'; }).join('') +
@@ -1704,7 +1763,13 @@
       var t = ev.target.closest('[data-action]');
       if (!t) return;
       var action = t.getAttribute('data-action');
-      if (action === 'pick-data') {
+      if (action === 'copy-chase') {
+        var cmod = D && clockModel(); if (!cmod) return;
+        var ctext = chaseEmailText(cmod);
+        var cdone = function () { t.textContent = 'Copied'; flash('Chase email copied. Paste it into a new email.'); setTimeout(function () { t.textContent = 'Copy chase email'; }, 2500); };
+        if (navigator.clipboard) navigator.clipboard.writeText(ctext).then(cdone, function () { window.prompt('Copy this text:', ctext); });
+        else window.prompt('Copy this text:', ctext);
+      } else if (action === 'pick-data') {
         ev.preventDefault(); $('#load-data').click();
       } else if (action === 'pick-notes') {
         ev.preventDefault(); $('#load-notes').click();
@@ -1762,7 +1827,9 @@
         if (D) pushUndo('load ' + f.name);
         if (!writeStore(KEYS.data, obj)) { setStatus('This browser wouldn’t store the file. It may be in private mode.', true); return; }
         markExported();
-        D = obj; usingOverride = true; refreshSettingsNote(); render(); setStatus('Loaded ' + f.name + '.');
+        D = obj; usingOverride = true; refreshSettingsNote(); render();
+        var iss = clockIssues(obj.ehcna || {});
+        setStatus('Loaded ' + f.name + '.' + (iss.length ? ' Check the assessment dates: ' + iss.join('; ') + '.' : ''), iss.length > 0);
       });
     });
     $('#load-notes').addEventListener('change', function (ev) {
@@ -2272,6 +2339,16 @@
         if (f.pseudo) pseudo[f.k] = v; else vals[f.k] = v;
       });
       if (missing.length) { $('#ef-status', form).textContent = 'Please fill in: ' + missing.join(', '); $('#ef-status', form).style.color = 'var(--coral)'; return; }
+      if (path === 'ehcna') {   // warn once if the clock dates don't add up; a second Save keeps them
+        var probe = {}; Object.keys(res.item || {}).forEach(function (k) { probe[k] = res.item[k]; });
+        Object.keys(vals).forEach(function (k) { probe[k] = vals[k]; });
+        var iss = clockIssues(probe), sig = iss.join('|');
+        if (iss.length && form.getAttribute('data-date-warned') !== sig) {
+          form.setAttribute('data-date-warned', sig);
+          $('#ef-status', form).textContent = 'These dates don’t add up: ' + iss.join('; ') + '. Fix them, or press Save again to keep them.';
+          $('#ef-status', form).style.color = 'var(--coral)'; return;
+        }
+      }
 
       var target = res.isNew ? {} : res.item;
       var before = JSON.stringify(target);

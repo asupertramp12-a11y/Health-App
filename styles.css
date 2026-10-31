@@ -719,3 +719,21 @@ td .edit-btn { display: flex; width: max-content; margin-top: 6px; }
   .backup-note.warn, .backup-side.warn { color: var(--sun); }
 }
 @media print { .undo-row { display: none !important; } }
+
+/* ------------------------------------------------- Clock: checks and next steps */
+p.clock-big { margin: 0; }
+.clock.compact h2 { margin-bottom: 0; }
+.clock-warn { margin: 16px 0 0; padding: 10px 14px; border-radius: var(--radius-sm); background: rgba(255, 194, 51, 0.14); color: #FFE3A3; font-size: 0.92rem; line-height: 1.45; }
+.clock-warn b { color: var(--sun); }
+.clock-warn a { color: var(--sun); font-weight: 700; }
+.clock-act { margin-top: 22px; padding: 16px 18px 6px; border-radius: var(--radius); background: rgba(255, 255, 255, 0.07); color: #E6ECFA; }
+.clock-act h3 { color: #fff; margin: 0 0 8px; font-size: 1rem; }
+.clock-act ol { margin: 0; padding-left: 1.3em; display: grid; gap: 10px; }
+.clock-act li { padding-left: 4px; line-height: 1.5; }
+.clock-act li::marker { color: var(--sun); font-weight: 700; }
+.clock-act b { color: #fff; }
+.clock-act a { color: var(--sun); font-weight: 700; }
+.clock-act .btn { display: flex; width: fit-content; margin: 10px 0 6px; }
+.btn-sun-quiet { background: transparent; color: var(--sun); box-shadow: inset 0 0 0 1.5px var(--sun); }
+.btn-sun-quiet:hover { background: rgba(255, 194, 51, 0.12); }
+@media print { .clock-act .btn { display: none; } }
