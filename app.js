@@ -35,7 +35,19 @@
     if (!NOTES.statusOverrides) NOTES.statusOverrides = {};
   }
   ensureLogs();
-  function saveNotes() { return writeStore(KEYS.notes, NOTES); }
+  function saveNotes() { NOTES.updated = new Date().toISOString(); return writeStore(KEYS.notes, NOTES); }
+  var BACKUP_KEY = 'dh:notesBackup:v1';
+  function emptyNotes() { return { v: 1, prep: {}, appts: [], sleep: [], incidents: [], captured: [], statusOverrides: {} }; }
+  function hasNotes() {
+    var p = NOTES.prep || {};
+    var prepUsed = Object.keys(p).some(function (k) {
+      var x = p[k] || {};
+      return (x.notes || x.outcome || (x.extraQ || []).length || (x.extraB || []).length || (x.hiddenQ || []).length || (x.hiddenB || []).length ||
+        Object.keys(x.checkedQ || {}).some(function (c) { return x.checkedQ[c]; }) || Object.keys(x.checkedB || {}).some(function (c) { return x.checkedB[c]; }));
+    });
+    return !!(prepUsed || (NOTES.appts || []).length || (NOTES.sleep || []).length || (NOTES.incidents || []).length ||
+      (NOTES.captured || []).length || Object.keys(NOTES.statusOverrides || {}).length);
+  }
 
   /* --------------------------------------------------------------- Utilities */
   function esc(s) {
@@ -205,10 +217,11 @@
         '<section class="hello"><div class="avatar" aria-hidden="true">D</div><div>' +
         '<h1>Load your data to begin</h1>' +
         '<p class="headline">Dorothea’s information isn’t stored on this website. Choose your <code>case-data.json</code> file once on this device and it will stay here, in this browser only.</p></div></section>' +
-        '<div class="btn-row"><button class="btn btn-primary" type="button" data-action="open-settings">Load data file</button></div>' +
+        '<div class="btn-row"><button class="btn btn-primary" type="button" data-action="pick-data">Load data file</button><button class="btn btn-quiet" type="button" data-action="open-settings">Data and backups</button></div>' +
         '<p class="tiny section-gap">On iPhone, add the site to your Home Screen first and load the file from the Home Screen icon — Safari and the icon keep separate storage.</p>';
       return;
     }
+    refreshBackupNote();
     var r = parseHash();
     var view = VIEWS[r.route] || VIEWS.home;
     var activeKey = VIEWS[r.route] ? r.route : 'home';
@@ -223,6 +236,7 @@
   }
 
   function onRoute() {
+    prepUndo = null;
     render();
     window.scrollTo(0, 0);
     $('#main').focus({ preventScroll: true });
@@ -749,6 +763,7 @@
     return '<a class="crumb" href="#/messages">Letters and emails</a>' +
       pageHead(editId ? 'Edit captured letter' : 'Capture an email or letter', 'Paste the whole email, including the From, Sent and Subject lines if you can. The details below fill themselves in; check them before saving.') +
       '<form class="panel" id="cap-form" style="max-width:760px">' +
+        '<p class="draft-note" id="cf-draft" role="status" aria-live="polite"></p>' +
         '<div class="field"><label for="cf-text">Paste the email or letter</label><textarea id="cf-text" rows="10" style="min-height:220px" placeholder="From: …&#10;Sent: …&#10;To: …&#10;Subject: …&#10;&#10;Dear Chris and Amy, …">' + esc(m.fullText || '') + '</textarea>' +
         '<div class="btn-row" style="margin-top:8px"><button class="btn btn-secondary" type="button" id="cf-parse">Fill in details from the text</button><span class="saved" id="cf-parsed"></span></div></div>' +
         '<div class="field"><span class="label">Direction</span><div class="btn-row seg">' +
@@ -766,8 +781,34 @@
         '<div class="btn-row"><button class="btn btn-primary" type="submit">Save</button><a class="btn btn-quiet" href="#/messages">Cancel</a></div>' +
       '</form>';
   }
+  var DRAFT_KEY = 'dh:capdraft:v1';
+  var DRAFT_FIELDS = ['cf-text', 'cf-date', 'cf-from', 'cf-to', 'cf-subject', 'cf-summary', 'cf-domain'];
   function bindCaptureForm(root, editId) {
     var form = $('#cap-form', root);
+    /* New captures keep a draft on this device so an interruption doesn't lose a long pasted email. */
+    if (!editId) {
+      var note = $('#cf-draft', form), dt = null;
+      var draft = readStore(DRAFT_KEY);
+      if (draft && draft.fields && draft.fields['cf-text'] !== undefined) {
+        DRAFT_FIELDS.forEach(function (k) { var el = $('#' + k, form); if (el && draft.fields[k] != null) el.value = draft.fields[k]; });
+        ['dir', 'status'].forEach(function (n) { var r = draft[n] && $('input[name="' + n + '"][value="' + draft[n] + '"]', form); if (r) r.checked = true; });
+        note.innerHTML = 'Draft restored (saved ' + esc(daysAgo(draft.at)) + ' at ' + esc(new Date(draft.at).toTimeString().slice(0, 5)) + '). <button type="button" class="linkish" id="cf-discard">Discard draft</button>';
+        $('#cf-discard', form).addEventListener('click', function () { removeStore(DRAFT_KEY); form.reset(); note.textContent = 'Draft discarded.'; $('#cf-text', form).focus(); });
+      }
+      var saveDraft = function () {
+        clearTimeout(dt);
+        dt = setTimeout(function () {
+          var f = {}; DRAFT_FIELDS.forEach(function (k) { var el = $('#' + k, form); if (el) f[k] = el.value; });
+          var any = ['cf-text', 'cf-from', 'cf-subject', 'cf-summary'].some(function (k) { return (f[k] || '').trim(); });
+          if (!any) { removeStore(DRAFT_KEY); return; }
+          writeStore(DRAFT_KEY, { at: new Date().toISOString(), fields: f,
+            dir: ($('input[name="dir"]:checked', form) || {}).value, status: ($('input[name="status"]:checked', form) || {}).value });
+        }, 400);
+      };
+      form.addEventListener('input', saveDraft); form.addEventListener('change', saveDraft);
+      var cancel = $('a.btn-quiet[href="#/messages"]', form);
+      if (cancel) cancel.addEventListener('click', function () { clearTimeout(dt); removeStore(DRAFT_KEY); });
+    }
     function fill(force) {
       var p = parseEmail($('#cf-text', form).value);
       var filled = [];
@@ -800,6 +841,7 @@
       NOTES.captured = NOTES.captured.filter(function (c) { return c.id !== entry.id; });
       NOTES.captured.push(entry);
       saveNotes();
+      if (!editId) { clearTimeout(dt); removeStore(DRAFT_KEY); }
       location.hash = '#/messages?f=local';
     });
   }
@@ -952,12 +994,17 @@
     var related = relatedEvents(a);
 
     function checks(items, kind, state) {
-      return '<ul class="checks">' + items.map(function (q) {
+      var rows = items.map(function (q) {
         var cid = 'c-' + kind + '-' + q.key;
         return '<li><input type="checkbox" id="' + cid + '" data-kind="' + kind + '" data-key="' + q.key + '"' + (state[q.key] ? ' checked' : '') + '>' +
           '<label for="' + cid + '">' + esc(q.text) + '</label>' +
-          '<button type="button" class="del" data-del="' + kind + '" data-mine="' + q.mine + '" data-idx="' + q.idx + '" aria-label="Remove">×</button></li>';
-      }).join('') + '</ul>';
+          '<button type="button" class="del" data-del="' + kind + '" data-mine="' + q.mine + '" data-idx="' + q.idx + '" aria-label="Remove: ' + esc(q.text) + '">×</button></li>';
+      });
+      if (prepUndo && prepUndo.id === id && prepUndo.kind === kind) {
+        rows.splice(Math.min(prepUndo.pos, rows.length), 0,
+          '<li class="undo-row"><span>Removed “' + esc(prepUndo.text) + '”</span><button type="button" class="btn btn-quiet" data-undo-prep>Undo</button></li>');
+      }
+      return '<ul class="checks">' + rows.join('') + '</ul>';
     }
 
     return '<div id="prep-detail"><a class="crumb no-print" href="#/prep">Appointment prep</a>' +
@@ -987,6 +1034,7 @@
       '<p class="tiny section-gap">Ticks, added questions and notes are saved in this browser only. Use Data and backups to copy them to another device.</p></div>';
   }
 
+  var prepUndo = null;   // last removed prep item, offered back as an inline Undo row
   function bindPrepDetail(main, id) {
     var a = findAppt(id); if (!a) return;
     var s = prepState(id);
@@ -999,13 +1047,25 @@
       if (t.matches('input[type="checkbox"][data-kind]')) {
         var bucket = t.getAttribute('data-kind') === 'q' ? s.checkedQ : s.checkedB;
         bucket[t.getAttribute('data-key')] = t.checked;
+        if (prepUndo) { prepUndo = null; var ur = $('#prep-detail .undo-row'); if (ur) ur.remove(); }
         saveNotes();
       }
     });
     root.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-undo-prep]')) {
+        if (!prepUndo || prepUndo.id !== id) return;
+        var u = prepUndo; prepUndo = null;
+        NOTES.prep[id] = JSON.parse(u.snap); saveNotes(); render();
+        var li = $all('#prep-detail ul.checks')[u.kind === 'q' ? 0 : 1];
+        var back = li && $all('li', li)[u.pos]; var cb = back && $('input', back); if (cb) cb.focus();
+        return;
+      }
       var b = ev.target.closest('[data-del]');
       if (!b) return;
       var kind = b.getAttribute('data-del'), mine = b.getAttribute('data-mine') === 'true', idx = +b.getAttribute('data-idx');
+      var row = b.closest('li'), list = row.parentNode;
+      prepUndo = { id: id, kind: kind, text: $('label', row).textContent, snap: JSON.stringify(s),
+        pos: $all('li', list).filter(function (x) { return !x.classList.contains('undo-row'); }).indexOf(row) };
       if (kind === 'q') {
         if (mine) { s.extraQ.splice(idx, 1); s.checkedQ = remapChecks(s.checkedQ, 'x', idx); }
         else { s.hiddenQ.push(idx); delete s.checkedQ['d' + idx]; }
@@ -1014,11 +1074,13 @@
         else { s.hiddenB.push(idx); delete s.checkedB['d' + idx]; }
       }
       saveNotes(); render();
+      var ub = $('#prep-detail [data-undo-prep]'); if (ub) ub.focus({ preventScroll: true });
     });
     $all('form[data-add]', root).forEach(function (f) {
       f.addEventListener('submit', function (ev) {
         ev.preventDefault();
         var input = $('input', f); var v = input.value.trim(); if (!v) return;
+        prepUndo = null;
         (f.getAttribute('data-add') === 'q' ? s.extraQ : s.extraB).push(v);
         saveNotes(); render();
         var again = $('#add-' + f.getAttribute('data-add')); if (again) again.focus();
@@ -1523,7 +1585,70 @@
   }
   function setStatus(msg, bad) {
     var el = $('#settings-status');
-    el.textContent = msg; el.style.color = bad ? 'var(--coral)' : '';
+    el.textContent = msg; el.classList.toggle('bad', !!bad);
+    if (msg && !$('#settings').open) flash(msg);
+  }
+  function daysAgo(iso) {
+    var d = Math.floor((Date.now() - Date.parse(iso)) / 864e5);
+    return d < 1 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago';
+  }
+  function refreshBackupNote() {
+    var b = readStore(BACKUP_KEY), has = hasNotes(), txt, warn = false;
+    if (!has) txt = 'Nothing to back up yet.';
+    else if (!b) { txt = 'Your notes haven’t been backed up yet.'; warn = true; }
+    else {
+      var changed = NOTES.updated && Date.parse(NOTES.updated) > Date.parse(b);
+      txt = 'Last backup: ' + daysAgo(b) + (changed ? ' · changes since then' : '');
+      warn = changed && (Date.now() - Date.parse(b)) > 7 * 864e5;
+    }
+    var el = $('#backup-note'); if (el) { el.textContent = txt; el.classList.toggle('warn', warn); }
+    var side = $('#backup-side'); if (side) { side.textContent = has ? txt : ''; side.classList.toggle('warn', warn); }
+    var gear = $('.topbar .settings-btn');
+    if (gear) { gear.classList.toggle('needs-backup', warn); gear.setAttribute('aria-label', warn ? 'Data and backups (notes need backing up)' : 'Data and backups'); }
+    var ex = $('#export-data-btn'); if (ex) ex.hidden = !D;
+  }
+  function backupNotes(tag) {
+    download('dorothea-hub-notes-' + todayISO() + (tag ? '-' + tag : '') + '.json', NOTES);
+    writeStore(BACKUP_KEY, new Date().toISOString());
+    refreshBackupNote();
+  }
+  function normaliseNotes(obj) {
+    return { v: 1, prep: obj.prep || {}, appts: arr(obj.appts), sleep: arr(obj.sleep), incidents: arr(obj.incidents), captured: arr(obj.captured), statusOverrides: obj.statusOverrides || {} };
+  }
+  /* Merge a backup into the notes on this device: keep everything here, add what is missing. */
+  function mergeNotes(mine, theirs) {
+    function byKey(a, b, key) {
+      var have = {}; a.forEach(function (x) { if (x) have[x[key]] = 1; });
+      b.forEach(function (x) { if (x && !have[x[key]]) a.push(x); });
+    }
+    byKey(mine.appts, theirs.appts, 'id'); byKey(mine.sleep, theirs.sleep, 'night');
+    byKey(mine.incidents, theirs.incidents, 'id'); byKey(mine.captured, theirs.captured, 'id');
+    Object.keys(theirs.statusOverrides).forEach(function (k) { if (!(k in mine.statusOverrides)) mine.statusOverrides[k] = theirs.statusOverrides[k]; });
+    Object.keys(theirs.prep).forEach(function (id) {
+      var t = theirs.prep[id] || {};
+      if (!mine.prep[id]) { mine.prep[id] = t; return; }
+      var m = prepState(id);
+      ['Q', 'B'].forEach(function (k) {
+        var ex = m['extra' + k], chk = m['checked' + k], tchk = t['checked' + k] || {};
+        Object.keys(tchk).forEach(function (c) { if (tchk[c] && c.charAt(0) === 'd') chk[c] = true; });
+        arr(t['extra' + k]).forEach(function (txt, j) {
+          var at = ex.indexOf(txt);
+          if (at === -1) { ex.push(txt); at = ex.length - 1; }
+          if (tchk['x' + j]) chk['x' + at] = true;
+        });
+        arr(t['hidden' + k]).forEach(function (i) { if (m['hidden' + k].indexOf(i) === -1) m['hidden' + k].push(i); });
+      });
+      ['notes', 'outcome'].forEach(function (f) {
+        var a = m[f] || '', b = t[f] || '';
+        if (!b || a === b || a.indexOf(b) !== -1) return;
+        m[f] = a ? a + '\n\n— From backup —\n' + b : b;
+      });
+    });
+  }
+  var pendingRestore = null;
+  function showRestoreChoice(on) {
+    var box = $('#restore-choice'); box.hidden = !on;
+    if (on){ $('#restore-title').textContent = 'Restore from ' + pendingRestore.name + '?'; $('[data-action="restore-merge"]', box).focus(); }
   }
   function refreshSettingsNote() {
     var compiled = D && D.meta && D.meta.compiled ? fmt(D.meta.compiled, true) : 'unknown date';
@@ -1554,8 +1679,24 @@
       var t = ev.target.closest('[data-action]');
       if (!t) return;
       var action = t.getAttribute('data-action');
-      if (action === 'open-settings') {
-        ev.preventDefault(); setStatus(''); refreshSettingsNote();
+      if (action === 'pick-data') {
+        ev.preventDefault(); $('#load-data').click();
+      } else if (action === 'pick-notes') {
+        ev.preventDefault(); $('#load-notes').click();
+      } else if (action === 'restore-merge' || action === 'restore-replace') {
+        if (!pendingRestore) return;
+        var inc = normaliseNotes(pendingRestore.obj), nm = pendingRestore.name;
+        if (action === 'restore-replace') { backupNotes('before-restore'); NOTES = inc; }
+        else mergeNotes(NOTES, inc);
+        pendingRestore = null; showRestoreChoice(false);
+        saveNotes();
+        if (action === 'restore-replace') writeStore(BACKUP_KEY, new Date().toISOString());
+        render(); refreshBackupNote();
+        setStatus(action === 'restore-replace' ? 'Notes replaced from ' + nm + '. Your previous notes were downloaded first.' : 'Added notes from ' + nm + '.');
+      } else if (action === 'restore-cancel') {
+        pendingRestore = null; showRestoreChoice(false); setStatus('Restore cancelled. Nothing changed.');
+      } else if (action === 'open-settings') {
+        ev.preventDefault(); setStatus(''); refreshSettingsNote(); refreshBackupNote(); pendingRestore = null; showRestoreChoice(false);
         if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
       } else if (action === 'export-data') {
         if (!D) { setStatus('No data loaded yet.', true); return; }
@@ -1574,10 +1715,14 @@
         removeStore(KEYS.data); D = BUILT_IN; usingOverride = false; refreshSettingsNote(); render();
         setStatus(BUILT_IN ? 'Now using the built-in data.' : 'Data removed from this device.');
       } else if (action === 'export-notes') {
-        download('dorothea-hub-notes-' + todayISO() + '.json', NOTES); setStatus('Notes backed up.');
+        if (!hasNotes()) { setStatus('There’s nothing to back up yet.'); return; }
+        backupNotes(); setStatus('Notes backed up. Keep the file somewhere safe, like iCloud Drive.');
       } else if (action === 'clear-notes') {
-        if (!confirm('Clear all your ticks, notes and added appointments in this browser?')) return;
-        NOTES = { v: 1, prep: {}, appts: [], sleep: [], incidents: [], captured: [], statusOverrides: {} }; saveNotes(); render(); setStatus('Your notes have been cleared.');
+        if (!hasNotes()) { setStatus('There are no notes to clear.'); return; }
+        if (!confirm('Clear all your ticks, notes, diary entries and added appointments on this device?\n\nA backup file will download first, so you can restore them later.')) return;
+        backupNotes('before-clear');
+        NOTES = emptyNotes(); saveNotes(); render(); refreshBackupNote();
+        setStatus('Your notes have been cleared. A backup was downloaded first.');
       }
     });
 
@@ -1585,7 +1730,10 @@
       var f = ev.target.files[0]; if (!f) return;
       readJSONFile(f, function (err, obj) {
         ev.target.value = '';
-        if (err || !obj || !obj.child || !Array.isArray(obj.events)) { setStatus('That file isn’t a Dorothea Hub data file. It needs “child” and “events” sections.', true); return; }
+        if (err || !obj || !obj.child || !Array.isArray(obj.events)) {
+          var d3 = $('#settings'); if (!d3.open && d3.showModal) d3.showModal();
+          setStatus('That file isn’t a Dorothea Hub data file. It needs “child” and “events” sections.', true); return;
+        }
         if (D) pushUndo('load ' + f.name);
         if (!writeStore(KEYS.data, obj)) { setStatus('This browser wouldn’t store the file. It may be in private mode.', true); return; }
         markExported();
@@ -1596,8 +1744,11 @@
       var f = ev.target.files[0]; if (!f) return;
       readJSONFile(f, function (err, obj) {
         ev.target.value = '';
-        if (err || !obj || typeof obj.prep !== 'object') { setStatus('That file isn’t a notes backup.', true); return; }
-        NOTES = { v: 1, prep: obj.prep || {}, appts: arr(obj.appts), sleep: arr(obj.sleep), incidents: arr(obj.incidents), captured: arr(obj.captured), statusOverrides: obj.statusOverrides || {} }; saveNotes(); render(); setStatus('Notes restored from ' + f.name + '.');
+        if (err || !obj || typeof obj.prep !== 'object') { setStatus('That file isn’t a notes backup. Choose a file named like dorothea-hub-notes-….json.', true); return; }
+        if (!hasNotes()) { NOTES = normaliseNotes(obj); saveNotes(); writeStore(BACKUP_KEY, new Date().toISOString()); render(); refreshBackupNote(); setStatus('Notes restored from ' + f.name + '.'); return; }
+        pendingRestore = { obj: obj, name: f.name };
+        var dlg2 = $('#settings'); if (!dlg2.open && dlg2.showModal) dlg2.showModal();
+        setStatus(''); showRestoreChoice(true);
       });
     });
 

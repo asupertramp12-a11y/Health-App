@@ -696,3 +696,26 @@ td .edit-btn { display: flex; width: max-content; margin-top: 6px; }
   .edit-bar b { display: inline; margin-right: 6px; }
   .edit-bar .btn-row { width: 100%; gap: 6px; }
 }
+
+/* ---------------------------------------------------------- Data safety */
+.backup-note { margin: 6px 0 12px; font-weight: 700; color: var(--ink-soft); }
+.backup-side { margin: 6px 0 0; }
+.backup-note.warn, .backup-side.warn { color: #8A5D00; }
+.settings-btn.needs-backup { position: relative; }
+.settings-btn.needs-backup::after { content: ""; position: absolute; top: 8px; right: 8px; width: 9px; height: 9px; border-radius: 50%; background: var(--sun); box-shadow: 0 0 0 2px var(--paper); }
+.restore-choice { margin-top: 14px; padding: 14px 16px; border-radius: var(--radius); background: var(--surface-2); }
+.restore-title { font-weight: 700; margin: 0 0 4px; }
+.danger-zone { margin-top: 22px; padding-top: 6px; border-top: 1px solid var(--line); }
+.danger-zone summary { cursor: pointer; font-weight: 700; color: var(--ink-soft); min-height: 44px; display: flex; align-items: center; gap: 8px; }
+.danger-zone[open] summary { color: var(--ink); }
+.danger-zone .btn-row { margin-top: 10px; }
+.status-line.bad { color: var(--coral); }
+.checks li.undo-row { align-items: center; padding: 6px 6px 6px 12px; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--ink-soft); }
+.checks li.undo-row + li { border-top: 0; }
+.undo-row span { flex: 1; }
+.draft-note { margin: 0 0 12px; font-size: 0.9rem; color: var(--ink-soft); }
+.draft-note:empty { display: none; }
+@media (prefers-color-scheme: dark) {
+  .backup-note.warn, .backup-side.warn { color: var(--sun); }
+}
+@media print { .undo-row { display: none !important; } }

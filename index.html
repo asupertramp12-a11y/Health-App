@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2026-10-30a">
+  <link rel="stylesheet" href="styles.css?v=2026-10-31a">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -28,6 +28,7 @@
       <nav class="nav" id="nav"></nav>
       <div class="sidebar-foot">
         <button class="linkish" type="button" data-action="open-settings">Data and backups</button>
+        <p class="tiny backup-side" id="backup-side"></p>
         <p class="tiny" id="compiled-note"></p>
       </div>
     </aside>
@@ -67,30 +68,44 @@
       <h3>Case data</h3>
       <p class="muted">Choose your <code>case-data.json</code>. It stays in this browser on this device only, and is never uploaded.</p>
       <div class="btn-row">
-        <label class="btn btn-secondary">
-          Load data file
-          <input type="file" accept="application/json,.json" id="load-data" hidden>
-        </label>
-        <button type="button" class="btn btn-secondary" data-action="export-data">Download data as JSON</button>
-        <button type="button" class="btn btn-quiet" data-action="reset-data">Remove data from this device</button>
+        <button type="button" class="btn btn-primary" data-action="pick-data">Load data file</button>
+        <button type="button" class="btn btn-secondary" data-action="export-data" id="export-data-btn">Download data as JSON</button>
       </div>
 
       <h3>Your notes</h3>
-      <p class="muted">Questions, ticks, notes and appointments you add are saved in this browser. Back them up to move between phone and laptop.</p>
+      <p class="muted">Questions, ticks, notes, diary entries and appointments you add are saved in this browser only. Back them up to keep them safe or move them between phone and laptop.</p>
+      <p class="backup-note" id="backup-note"></p>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" data-action="export-notes">Back up my notes</button>
-        <label class="btn btn-secondary">
-          Restore notes
-          <input type="file" accept="application/json,.json" id="load-notes" hidden>
-        </label>
-        <button type="button" class="btn btn-quiet danger" data-action="clear-notes">Clear my notes</button>
+        <button type="button" class="btn btn-secondary" data-action="pick-notes">Restore notes</button>
       </div>
+      <div class="restore-choice" id="restore-choice" hidden>
+        <p class="restore-title" id="restore-title"></p>
+        <p class="muted"><b>Add to my notes</b> keeps everything on this device and adds anything new from the backup. <b>Replace</b> swaps your notes for the backup; a copy of your current notes downloads first.</p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" data-action="restore-merge">Add to my notes</button>
+          <button type="button" class="btn btn-secondary" data-action="restore-replace">Replace my notes</button>
+          <button type="button" class="btn btn-quiet" data-action="restore-cancel">Cancel</button>
+        </div>
+      </div>
+
+      <details class="danger-zone">
+        <summary>Remove or clear data</summary>
+        <p class="muted">Use these only when you mean to start again on this device. Clearing your notes downloads a backup first.</p>
+        <div class="btn-row">
+          <button type="button" class="btn btn-quiet danger" data-action="reset-data">Remove case data from this device</button>
+          <button type="button" class="btn btn-quiet danger" data-action="clear-notes">Clear my notes</button>
+        </div>
+      </details>
       <p class="status-line" id="settings-status" role="status" aria-live="polite"></p>
     </form>
   </dialog>
+  <!-- File pickers live outside the dialog so they can be opened from anywhere; the buttons above trigger them. -->
+  <input type="file" accept="application/json,.json" id="load-data" class="visually-hidden" tabindex="-1" aria-hidden="true">
+  <input type="file" accept="application/json,.json" id="load-notes" class="visually-hidden" tabindex="-1" aria-hidden="true">
 
   <noscript><p class="noscript">Dorothea Hub needs JavaScript turned on.</p></noscript>
 
-  <script src="app.js?v=2026-10-30a"></script>
+  <script src="app.js?v=2026-10-31a"></script>
 </body>
 </html>
