@@ -426,7 +426,8 @@
     var soon = p.precision === 'day' && dayDiff(TODAY, p.d) <= 14 && dayDiff(TODAY, p.d) >= 0;
     var top = p.precision === 'day' ? p.d.getDate() : MONTHS[p.d.getMonth()];
     var bottom = p.precision === 'day' ? MONTHS[p.d.getMonth()] + ' ' + String(p.d.getFullYear()).slice(2) : p.d.getFullYear();
-    return '<span class="datebox' + (soon ? ' soon' : '') + '"><span class="d">' + top + '</span><span class="m">' + bottom + '</span></span>';
+    return '<span class="datebox' + (soon ? ' soon' : '') + '"><span class="d" aria-hidden="true">' + top + '</span><span class="m" aria-hidden="true">' + bottom + '</span>' +
+      '<span class="visually-hidden">' + esc(fmt(s, true)) + '</span></span>';
   }
 
   function allAppointments() {
@@ -501,7 +502,7 @@
         '<div class="grid grid-2 section-gap">' +
           '<section class="panel"><div class="panel-head"><h2>Recently</h2><a href="#/timeline">Timeline</a></div>' +
             '<ul class="mini-events">' + recent.map(function (e) {
-              return '<li><span class="when">' + esc(fmt(e.date)) + '</span><span class="dot ' + esc(e.domain) + '" title="' + esc(domainLabel(e.domain)) + '"></span><span>' + esc(e.title) + '</span></li>';
+              return '<li><span class="when">' + esc(fmt(e.date)) + '</span><span class="dot ' + esc(e.domain) + '" title="' + esc(domainLabel(e.domain)) + '" aria-hidden="true"></span><span><span class="visually-hidden">' + esc(domainLabel(e.domain)) + ': </span>' + esc(e.title) + '</span></li>';
             }).join('') + '</ul>' +
           '</section>' +
           '<section class="panel"><div class="panel-head"><h2>Worth checking</h2></div>' +
@@ -524,7 +525,7 @@
       var domains = Object.keys(D.domains || {});
       var chips = '<button class="chip" type="button" data-domain="all" aria-pressed="' + (tlState.domain === 'all') + '">All</button>' +
         domains.map(function (k) {
-          return '<button class="chip" type="button" data-domain="' + esc(k) + '" aria-pressed="' + (tlState.domain === k) + '"><span class="dot ' + esc(k) + '"></span>' + esc(domainShort(k)) + '</button>';
+          return '<button class="chip" type="button" data-domain="' + esc(k) + '" aria-pressed="' + (tlState.domain === k) + '"><span class="dot ' + esc(k) + '" aria-hidden="true"></span>' + esc(domainShort(k)) + '</button>';
         }).join('');
       return pageHead('Timeline', 'Every event from the documents, with its source. Dashed cards are upcoming or worked out from other dates.') +
         '<div class="filters" role="group" aria-label="Filter timeline">' + chips + '</div>' +
@@ -532,7 +533,7 @@
           '<label class="visually-hidden" for="tl-q">Filter timeline</label>' +
           '<input class="filter-input" id="tl-q" type="search" placeholder="Filter by word or name" value="' + esc(tlState.q) + '">' +
           '<button class="chip" type="button" id="tl-up" aria-pressed="' + tlState.upcoming + '">Show upcoming</button>' +
-          '<button class="chip" type="button" id="tl-sort" aria-pressed="false">' + (tlState.newest ? 'Newest first' : 'Oldest first') + '</button>' +
+          '<button class="chip" type="button" id="tl-sort"><span class="visually-hidden">Order: </span>' + (tlState.newest ? 'Newest first' : 'Oldest first') + '</button>' +
           '<button class="btn btn-quiet no-print" type="button" id="tl-print">' + icon('print') + 'Print</button>' + addLink('events', 'Add event') +
         '</div>' +
         '<div id="tl-body"></div>';
@@ -571,7 +572,7 @@
             todayDrawn = true;
           }
           var cls = e.kind === 'deadline' ? 'deadline' : (future ? 'upcoming' : (e.kind === 'inferred' ? 'inferred' : ''));
-          html += '<li><span class="dot ' + esc(e.domain) + '"></span><article class="card ' + cls + '">' +
+          html += '<li><span class="dot ' + esc(e.domain) + '" aria-hidden="true"></span><article class="card ' + cls + '">' +
             '<div class="meta"><span class="date">' + esc(fmt(e.date)) + '</span>' +
               '<span class="pill">' + esc(domainShort(e.domain)) + '</span>' +
               (e.evidence ? '<span class="pill sky">' + esc(e.evidence) + '</span>' : '') +
@@ -603,7 +604,7 @@
         tlState.upcoming = !tlState.upcoming; ev.currentTarget.setAttribute('aria-pressed', String(tlState.upcoming)); draw();
       });
       $('#tl-sort', root).addEventListener('click', function (ev) {
-        tlState.newest = !tlState.newest; ev.currentTarget.textContent = tlState.newest ? 'Newest first' : 'Oldest first'; draw();
+        tlState.newest = !tlState.newest; ev.currentTarget.innerHTML = '<span class="visually-hidden">Order: </span>' + (tlState.newest ? 'Newest first' : 'Oldest first'); draw();
       });
       $('#tl-print', root).addEventListener('click', function () { window.print(); });
       draw();
@@ -667,7 +668,7 @@
         '</section>' +
         '<section class="panel section-gap"><div class="panel-head"><h2>Assessment events</h2><a href="#/timeline">Full timeline</a></div>' +
           '<ul class="mini-events">' + events.map(function (x) {
-            return '<li><span class="when">' + esc(fmt(x.date)) + '</span><span class="dot ' + (ahead(x) ? 'family' : 'ehcp') + '"></span><span>' + esc(x.title) + (x.confidence && x.confidence !== 'high' ? ' ' + confPill(x.confidence) : '') + '</span></li>';
+            return '<li><span class="when">' + esc(fmt(x.date)) + '</span><span class="dot ' + (ahead(x) ? 'family' : 'ehcp') + '" aria-hidden="true"></span><span>' + (ahead(x) ? '<span class="visually-hidden">Coming up: </span>' : '') + esc(x.title) + (x.confidence && x.confidence !== 'high' ? ' ' + confPill(x.confidence) : '') + '</span></li>';
           }).join('') + '</ul>' +
         '</section>';
     }
@@ -1587,9 +1588,9 @@
           '</tbody></table></div></section>' + addLink('documents', 'Add a source file');
       }
       return pageHead('Evidence check', 'Use this before meetings and before the draft plan arrives, to spot what needs correcting or chasing.') +
-        '<div class="tabs" role="tablist">' + tabs.map(function (t) {
-          return '<a class="chip" role="tab" href="#/evidence/' + t[0] + '" aria-selected="' + (tab === t[0]) + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + ' <span class="pill">' + t[2] + '</span></a>';
-        }).join('') + '</div><div class="stack">' + body + '</div>';
+        '<nav class="tabs" aria-label="Evidence sections">' + tabs.map(function (t) {
+          return '<a class="chip" href="#/evidence/' + t[0] + '"' + (tab === t[0] ? ' aria-current="page"' : '') + '>' + t[1] + ' <span class="pill">' + t[2] + '</span></a>';
+        }).join('') + '</nav><div class="stack">' + body + '</div>';
     }
   };
 
@@ -2338,7 +2339,7 @@
         if (f.required && (v === '' || (Array.isArray(v) && !v.length))) missing.push(f.label);
         if (f.pseudo) pseudo[f.k] = v; else vals[f.k] = v;
       });
-      if (missing.length) { $('#ef-status', form).textContent = 'Please fill in: ' + missing.join(', '); $('#ef-status', form).style.color = 'var(--coral)'; return; }
+      if (missing.length) { $('#ef-status', form).textContent = 'Please fill in: ' + missing.join(', '); $('#ef-status', form).style.color = 'var(--coral-text)'; return; }
       if (path === 'ehcna') {   // warn once if the clock dates don't add up; a second Save keeps them
         var probe = {}; Object.keys(res.item || {}).forEach(function (k) { probe[k] = res.item[k]; });
         Object.keys(vals).forEach(function (k) { probe[k] = vals[k]; });
@@ -2346,7 +2347,7 @@
         if (iss.length && form.getAttribute('data-date-warned') !== sig) {
           form.setAttribute('data-date-warned', sig);
           $('#ef-status', form).textContent = 'These dates don’t add up: ' + iss.join('; ') + '. Fix them, or press Save again to keep them.';
-          $('#ef-status', form).style.color = 'var(--coral)'; return;
+          $('#ef-status', form).style.color = 'var(--coral-text)'; return;
         }
       }
 
