@@ -1,7 +1,7 @@
 {
-  "name": "Dorothea Hub",
-  "short_name": "Dorothea",
-  "description": "Family hub for Dorothea's health, nursery and EHCP information.",
+  "name": "Family Hub",
+  "short_name": "Family Hub",
+  "description": "Private family hub for a child's health, nursery and EHCP information.",
   "start_url": "./index.html#/home",
   "display": "standalone",
   "background_color": "#F4F8FF",

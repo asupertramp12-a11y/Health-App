@@ -1,4 +1,4 @@
-/* Dorothea Hub — app logic
+/* Family Hub — app logic
    Plain JavaScript, no build step. Reads window.CASE_DATA from data/case-data.js.
    Personal notes and added appointments are kept in this browser's localStorage.
    Edit mode (pencil button) changes the case data itself; see “Edit mode” below. */
@@ -36,6 +36,30 @@
   }
   ensureLogs();
   function saveNotes() { NOTES.updated = new Date().toISOString(); return writeStore(KEYS.notes, NOTES); }
+  /* Names come from the loaded data file, so the public code holds nothing about the family. */
+  function kid() { var c = D && D.child; return (c && (c.shortName || (c.name || '').split(' ')[0])) || 'your child'; }
+  function kids() { return kid() === 'your child' ? 'your child’s' : kid() + '’s'; }
+  function Kids() { var k = kids(); return k.charAt(0).toUpperCase() + k.slice(1); }
+  function appName() { return D && D.child && kid() !== 'your child' ? kid() + ' Hub' : 'Family Hub'; }
+  function council() { return (D && D.child && D.child.localAuthority) || 'The council'; }
+  function senTeam() { return (D && D.ehcna && D.ehcna.team) || 'the council’s SEN team'; }
+  /* Who can get up in the night: from the data file if listed, else the names already used in the diary. */
+  function carers() {
+    var c = D && D.child && D.child.carers;
+    var list = c ? String(c).split(',').map(function (x) { return x.trim(); }).filter(Boolean) : [];
+    if (!list.length) (NOTES.sleep || []).forEach(function (s) { if (s.who && s.who !== 'Both' && list.indexOf(s.who) === -1) list.push(s.who); });
+    if (!list.length) list = ['Parent 1', 'Parent 2'];
+    return list;
+  }
+  /* Is a From line one of us? Matches the carers' names and any family email addresses in the data file. */
+  function isFamily(from) {
+    var f = String(from || '').toLowerCase();
+    var extra = D && D.child && D.child.familyEmails ? String(D.child.familyEmails).split(',') : [];
+    return carers().concat(extra).some(function (t) {
+      t = String(t).trim().toLowerCase();
+      return t.length > 2 && !/^parent \d$/.test(t) && f.indexOf(t) !== -1;
+    });
+  }
   var BACKUP_KEY = 'dh:notesBackup:v1';
   function emptyNotes() { return { v: 1, prep: {}, appts: [], sleep: [], incidents: [], captured: [], statusOverrides: {} }; }
   function hasNotes() {
@@ -149,7 +173,7 @@
     prep: '<path d="M8 3v3M16 3v3"/><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17"/><path d="m8.5 15 2 2 4.5-4.5"/>',
     messages: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.5 7 8.5 6 8.5-6"/>',
     health: '<path d="M12 20s-7.5-4.6-7.5-10.1A4.4 4.4 0 0 1 12 7a4.4 4.4 0 0 1 7.5 2.9C19.5 15.4 12 20 12 20Z"/>',
-    dorothea: '<path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7Z"/>',
+    about: '<path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7Z"/>',
     people: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19.5c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.6c2.4.2 4.3 1.8 4.8 4.4"/>',
     evidence: '<path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/><path d="m10 14 1.5 1.5L15 12"/>',
     more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
@@ -172,7 +196,7 @@
     { key: 'prep', label: 'Appointment prep', icon: 'prep', desc: 'Questions, notes and what to bring' },
     { key: 'messages', label: 'Letters and emails', icon: 'messages', desc: 'Who said what, and what we’re waiting for' },
     { key: 'health', label: 'Health', icon: 'health', desc: 'Diagnoses, concerns and referrals' },
-    { key: 'dorothea', label: 'About Dorothea', icon: 'dorothea', desc: 'Strengths, needs and what works' },
+    { key: 'about', get label() { return D ? 'About ' + kid() : 'About'; }, icon: 'about', desc: 'Strengths, needs and what works' },
     { key: 'support', label: 'Support and benefits', icon: 'support', desc: 'Sleep diary, road-safety log, DLA and Blue Badge' },
     { key: 'people', label: 'People', icon: 'people', desc: 'Professionals and contacts' },
     { key: 'evidence', label: 'Evidence check', icon: 'evidence', desc: 'Conflicts, gaps and the evidence index' }
@@ -211,12 +235,14 @@
   var VIEWS = {};
 
   function render() {
+    $all('.brand-name').forEach(function (el) { el.textContent = appName(); });
+    $all('a.brand').forEach(function (el) { el.setAttribute('aria-label', appName() + ' home'); });
     if (!D) {
       renderNav('home');
       $('#main').innerHTML =
-        '<section class="hello"><div class="avatar" aria-hidden="true">D</div><div>' +
+        '<section class="hello"><div class="avatar" aria-hidden="true"><img src="logo.svg" alt="" width="40" height="40"></div><div>' +
         '<h1>Load your data to begin</h1>' +
-        '<p class="headline">Dorothea’s information isn’t stored on this website. Choose your <code>case-data.json</code> file once on this device and it will stay here, in this browser only.</p></div></section>' +
+        '<p class="headline">Your child’s information isn’t stored on this website. Choose your <code>case-data.json</code> file once on this device and it will stay here, in this browser only.</p></div></section>' +
         '<div class="btn-row"><button class="btn btn-primary" type="button" data-action="pick-data">Load data file</button><button class="btn btn-quiet" type="button" data-action="open-settings">Data and backups</button></div>' +
         '<p class="tiny section-gap">On iPhone, add the site to your Home Screen first and load the file from the Home Screen icon — Safari and the icon keep separate storage.</p>';
       return;
@@ -231,7 +257,7 @@
     if (view.bind) view.bind(main, r);
     syncEditToggle();
     var title = (ROUTES.filter(function (x) { return x.key === activeKey; })[0] || {}).label;
-    document.title = (title && activeKey !== 'home' ? title + ' — ' : '') + 'Dorothea Hub';
+    document.title = (title && activeKey !== 'home' ? title + ' — ' : '') + appName();
     $('#search-input').value = r.route === 'search' ? (r.query.get('q') || '') : '';
   }
 
@@ -535,7 +561,7 @@
       var events = allEvents().filter(function (x) { return x.domain === 'ehcp'; })
         .sort(function (a, b) { return sortKey(a.date) - sortKey(b.date); });
 
-      return pageHead('EHC needs assessment', 'Cheshire East Council, reference ' + esc((D.meta && D.meta.laReference) || '') + '. Dates and statements are from council correspondence unless marked.') +
+      return pageHead('EHC needs assessment', esc(council()) + ', reference ' + esc((D.meta && D.meta.laReference) || '') + '. Dates and statements are from council correspondence unless marked.') +
         (EDIT ? '<div class="btn-row" style="margin-bottom:12px">' + objLink('ehcna', 'Edit status and dates') + '</div>' : '') +
         '<div class="facts">' +
           '<div class="fact"><span class="k">Decision to assess</span><span class="v">' + esc(fmt(e.decisionToAssess)) + '</span></div>' +
@@ -595,7 +621,7 @@
       var p = arr(D.people).filter(function (x) { return x.name === cur.name; })[0];
       return '<p class="source">Write to ' + esc(cur.name) + (p && p.email ? ' (<a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a>)' : '') + ' and quote ref ' + ref + '.</p>';
     }
-    return '<p class="source">Until a new officer is named, write to SEN Team East and quote ref ' + ref + '.</p>';
+    return '<p class="source">Until a new officer is named, write to ' + esc(senTeam()) + ' and quote ref ' + ref + '.</p>';
   }
   function commitmentsHTML(e) {
     var list = arr(e.commitmentsFromLetters);
@@ -639,10 +665,10 @@
     });
     if (out.date) out.date = looseDate(out.date);
     if (!out.date) out.date = looseDate(lines.join(' '));
+    if (out.from) out.direction = isFamily(out.from) ? 'out' : 'in';
     if (out.from) out.from = cleanName(out.from);
     if (out.to) out.to = cleanName(out.to);
     if (out.subject) out.subject = out.subject.replace(/^((re|fw|fwd)\s*:\s*)+/i, function (x) { return x; }).trim();
-    if (out.from) out.direction = /dugdale|wilde805|amy wilde|chrisdugdale/i.test(out.from) ? 'out' : 'in';
     var bodyStart = text.search(/\n\s*\n/);
     var body = (bodyStart > -1 && (out.from || out.subject) ? text.slice(bodyStart) : text).trim();
     var greeting = body.split(/\r?\n/).filter(function (l) { return l.trim(); });
@@ -655,7 +681,7 @@
   }
   function letterAsText(m) {
     return [
-      'Letter or email captured in Dorothea Hub',
+      'Letter or email captured in ' + appName(),
       'ID: ' + m.id,
       'Direction: ' + (m.direction === 'in' ? 'Received' : 'Sent by us'),
       'Date: ' + fmt(m.date, true),
@@ -716,7 +742,7 @@
             (actions ? '<div class="btn-row msg-actions no-print">' + actions + '</div>' : '') +
           '</div></li>';
         }).join('') + '</ul>' : '<p class="empty">No letters in this view.</p>') + '</section>' +
-        (localCount ? '<p class="tiny section-gap">Letters you capture are saved on this device. Use “Download for Claude” to send them to the Dorothea Hub project, and they’ll come back in the next data file.</p>' : '') +
+        (localCount ? '<p class="tiny section-gap">Letters you capture are saved on this device. Use “Download for Claude” to send them to your Claude project, and they’ll come back in the next data file.</p>' : '') +
         '</div>';
     },
     bind: function (root, r) {
@@ -748,9 +774,9 @@
           else window.prompt('Copy this text:', text);
         } else if (act === 'export') {
           var items = allCorrespondence().filter(function (x) { return x.local; }).sort(function (a, c) { return sortKey(a.date) - sortKey(c.date); });
-          var text2 = 'Dorothea Hub — letters and emails captured on this device (' + fmt(todayISO(), true) + ')\nPlease add these to the hub data, keeping the IDs.\n\n' +
+          var text2 = appName() + ' — letters and emails captured on this device (' + fmt(todayISO(), true) + ')\nPlease add these to the hub data, keeping the IDs.\n\n' +
             items.map(letterAsText).join('\n\n========================================\n\n');
-          downloadText('dorothea-letters-' + todayISO() + '.txt', text2, 'text/plain');
+          downloadText('hub-letters-' + todayISO() + '.txt', text2, 'text/plain');
         }
       });
     }
@@ -764,7 +790,7 @@
       pageHead(editId ? 'Edit captured letter' : 'Capture an email or letter', 'Paste the whole email, including the From, Sent and Subject lines if you can. The details below fill themselves in; check them before saving.') +
       '<form class="panel" id="cap-form" style="max-width:760px">' +
         '<p class="draft-note" id="cf-draft" role="status" aria-live="polite"></p>' +
-        '<div class="field"><label for="cf-text">Paste the email or letter</label><textarea id="cf-text" rows="10" style="min-height:220px" placeholder="From: …&#10;Sent: …&#10;To: …&#10;Subject: …&#10;&#10;Dear Chris and Amy, …">' + esc(m.fullText || '') + '</textarea>' +
+        '<div class="field"><label for="cf-text">Paste the email or letter</label><textarea id="cf-text" rows="10" style="min-height:220px" placeholder="From: …&#10;Sent: …&#10;To: …&#10;Subject: …&#10;&#10;Dear …">' + esc(m.fullText || '') + '</textarea>' +
         '<div class="btn-row" style="margin-top:8px"><button class="btn btn-secondary" type="button" id="cf-parse">Fill in details from the text</button><span class="saved" id="cf-parsed"></span></div></div>' +
         '<div class="field"><span class="label">Direction</span><div class="btn-row seg">' +
           '<label><input type="radio" name="dir" value="in"' + (dir === 'in' ? ' checked' : '') + '> Received</label>' +
@@ -837,7 +863,7 @@
         fullText: $('#cf-text', form).value.trim(),
         captured: new Date().toISOString()
       };
-      if (!entry.from && entry.direction === 'out') entry.from = 'Chris and Amy';
+      if (!entry.from && entry.direction === 'out') entry.from = carers().join(' and ');
       NOTES.captured = NOTES.captured.filter(function (c) { return c.id !== entry.id; });
       NOTES.captured.push(entry);
       saveNotes();
@@ -867,8 +893,8 @@
     }
   };
 
-  /* --------------------------------------------------------------- Dorothea */
-  VIEWS.dorothea = {
+  /* ------------------------------------------------------------------ About */
+  VIEWS.about = {
     html: function () {
       var p = D.profile || {}, c = D.child || {};
       function bubbles(title, items, cls) {
@@ -877,7 +903,7 @@
       function list(title, items) {
         return '<section class="panel"><h2>' + esc(title) + '</h2><ul>' + arr(items).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></section>';
       }
-      return pageHead('About ' + (c.shortName || 'Dorothea'), esc(ageText(c.dob)) + '. Attends ' + esc(c.setting || '') + (c.settingDays ? ' on ' + esc(c.settingDays) : '') + '. Due to start reception in ' + esc(c.receptionYear || '') + '.') +
+      return pageHead('About ' + kid(), esc(ageText(c.dob)) + '. Attends ' + esc(c.setting || '') + (c.settingDays ? ' on ' + esc(c.settingDays) : '') + '. Due to start reception in ' + esc(c.receptionYear || '') + '.') +
         (EDIT ? '<div class="btn-row" style="margin-bottom:12px">' + objLink('child', 'Edit her details') + objLink('profile', 'Edit profile') + '<a class="edit-btn no-print" href="#/edit/sendPlans">' + icon('pencil') + 'SEND plan cycles</a></div>' : '') +
         '<section class="panel"><p class="quote">' + esc(c.headline || '') + '</p></section>' +
         '<div class="grid grid-2 section-gap">' +
@@ -918,7 +944,7 @@
           var ia = order.indexOf(a), ib = order.indexOf(b);
           return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
         });
-        var labels = { Council: 'Cheshire East Council', Advice: 'Independent advice', Nursery: 'Nursery', Therapy: 'Therapy and sensory support', Health: 'Health' };
+        var labels = { Council: council(), Advice: 'Independent advice', Nursery: 'Nursery', Therapy: 'Therapy and sensory support', Health: 'Health' };
         $('#ppl-body', root).innerHTML = keys.length ? keys.map(function (k) {
           return '<h2 class="group-title">' + esc(labels[k] || k) + '</h2><div class="people-grid">' + groups[k].map(function (p) {
             var contact = '';
@@ -1173,7 +1199,6 @@
     ['overwhelmed', 'Overwhelmed by noise or crowds'],
     ['traffic', 'Moved towards traffic or moving cars']
   ];
-  var WHO = ['Chris', 'Amy', 'Both'];
 
   function isoDate(d) {
     var m = d.getMonth() + 1, day = d.getDate();
@@ -1252,7 +1277,7 @@
       var rc = roadStats();
       var support = arr(D.support);
       var statusCls = { 'in place': 'mint', 'to do': 'sun', 'exploring': 'sky', 'not yet': '', 'later': '' };
-      return pageHead('Support and benefits', 'Logs that turn everyday life into evidence, and a tracker of the help Dorothea may be entitled to.') +
+      return pageHead('Support and benefits', 'Logs that turn everyday life into evidence, and a tracker of the help ' + kid() + ' may be entitled to.') +
         '<div class="grid grid-2">' +
           '<section class="panel"><div class="panel-head"><h2>Sleep diary</h2><a href="#/support/sleep">All nights</a></div>' +
             (st.logged ? '<div class="facts facts-3">' +
@@ -1318,7 +1343,7 @@
           '<div class="field"><label for="sf-to">Back asleep at</label><input type="time" id="sf-to" value="' + esc(s.to || '') + '"></div></div>' +
           '<div class="grid grid-2"><div class="field"><label for="sf-times">Times someone got up</label><input type="number" min="1" max="12" id="sf-times" value="' + esc(s.times || 1) + '"></div>' +
           '<div class="field"><label for="sf-mins">Total time up (minutes)</label><input type="number" min="0" max="720" id="sf-mins" value="' + esc(s.minutes != null ? s.minutes : '') + '"><span class="tiny">Fills in from the times; change it if she woke more than once.</span></div></div>' +
-          '<div class="field"><span class="label">Who got up</span><div class="btn-row seg">' + WHO.map(function (w) {
+          '<div class="field"><span class="label">Who got up</span><div class="btn-row seg">' + carers().concat(s.who && s.who !== 'Both' && carers().indexOf(s.who) === -1 ? [s.who] : [], ['Both']).map(function (w) {
             return '<label><input type="radio" name="who" value="' + w + '"' + (s.who === w ? ' checked' : '') + '> ' + w + '</label>';
           }).join('') + '</div></div>' +
           '<div class="field"><span class="label">What you had to do</span>' + checkboxGroup('needs', SLEEP_NEEDS, s.needs) + '</div>' +
@@ -1608,7 +1633,7 @@
     var ex = $('#export-data-btn'); if (ex) ex.hidden = !D;
   }
   function backupNotes(tag) {
-    download('dorothea-hub-notes-' + todayISO() + (tag ? '-' + tag : '') + '.json', NOTES);
+    download('hub-notes-' + todayISO() + (tag ? '-' + tag : '') + '.json', NOTES);
     writeStore(BACKUP_KEY, new Date().toISOString());
     refreshBackupNote();
   }
@@ -1711,7 +1736,7 @@
         setEdit(!EDIT); render();
         if (EDIT) flash('Edit mode on — tap Edit on anything to change it');
       } else if (action === 'reset-data') {
-        if (!BUILT_IN && !confirm('Remove Dorothea’s data from this device? You can load the file again any time.')) return;
+        if (!BUILT_IN && !confirm('Remove ' + kids() + ' data from this device? You can load the file again any time.')) return;
         removeStore(KEYS.data); D = BUILT_IN; usingOverride = false; refreshSettingsNote(); render();
         setStatus(BUILT_IN ? 'Now using the built-in data.' : 'Data removed from this device.');
       } else if (action === 'export-notes') {
@@ -1732,7 +1757,7 @@
         ev.target.value = '';
         if (err || !obj || !obj.child || !Array.isArray(obj.events)) {
           var d3 = $('#settings'); if (!d3.open && d3.showModal) d3.showModal();
-          setStatus('That file isn’t a Dorothea Hub data file. It needs “child” and “events” sections.', true); return;
+          setStatus('That file isn’t a hub data file. It needs “child” and “events” sections.', true); return;
         }
         if (D) pushUndo('load ' + f.name);
         if (!writeStore(KEYS.data, obj)) { setStatus('This browser wouldn’t store the file. It may be in private mode.', true); return; }
@@ -1744,7 +1769,7 @@
       var f = ev.target.files[0]; if (!f) return;
       readJSONFile(f, function (err, obj) {
         ev.target.value = '';
-        if (err || !obj || typeof obj.prep !== 'object') { setStatus('That file isn’t a notes backup. Choose a file named like dorothea-hub-notes-….json.', true); return; }
+        if (err || !obj || typeof obj.prep !== 'object') { setStatus('That file isn’t a notes backup. Choose a file named like hub-notes-….json.', true); return; }
         if (!hasNotes()) { NOTES = normaliseNotes(obj); saveNotes(); writeStore(BACKUP_KEY, new Date().toISOString()); render(); refreshBackupNote(); setStatus('Notes restored from ' + f.name + '.'); return; }
         pendingRestore = { obj: obj, name: f.name };
         var dlg2 = $('#settings'); if (!dlg2.open && dlg2.showModal) dlg2.showModal();
@@ -1787,6 +1812,7 @@
   var SECTIONS = {
     'ehcna': { label: 'Assessment status and dates', kind: 'object', group: 'EHC assessment', fields: [
       F.text('status', 'Current status (shown on the clock)', { required: true }),
+      F.text('team', 'SEN team to write to', { help: 'Used when no case officer is named.' }),
       F.date('requestInferred', 'Request received by the council', { help: 'The 20-week clock starts here.' }),
       F.area('requestInferredNote', 'Note about the 20-week clock'),
       F.date('decisionToAssess', 'Decision to assess'),
@@ -1884,16 +1910,18 @@
     'documents': { label: 'Source files', kind: 'list', group: 'Evidence', title: 'name', fields: [
       F.text('name', 'File name', { required: true }), F.text('kind', 'Type'), F.text('note', 'What it is')
     ] },
-    'child': { label: 'Dorothea’s details', kind: 'object', group: 'About Dorothea', fields: [
+    'child': { get label() { return Kids() + ' details'; }, kind: 'object', group: 'About', fields: [
       F.text('name', 'Full name', { required: true }), F.text('shortName', 'Short name'), F.date('dob', 'Date of birth'),
-      F.text('setting', 'Nursery or school'), F.text('settingDays', 'Days attending'), F.text('receptionYear', 'Starts reception'), F.area('headline', 'Headline')
+      F.text('setting', 'Nursery or school'), F.text('settingDays', 'Days attending'), F.text('receptionYear', 'Starts reception'),
+      F.text('localAuthority', 'Council'), F.text('carers', 'Parents or carers', { help: 'First names separated by commas. Used in the sleep diary and to spot emails you sent.' }),
+      F.text('familyEmails', 'Your email addresses', { help: 'Separated by commas. Pasted emails from these count as sent by you.' }), F.area('headline', 'Headline')
     ] },
-    'profile': { label: 'About Dorothea (profile)', kind: 'object', group: 'About Dorothea', fields: [
+    'profile': { get label() { return 'About ' + kid() + ' (profile)'; }, kind: 'object', group: 'About', fields: [
       F.lines('strengths', 'What she does well'), F.lines('whatWorks', 'What helps her'), F.lines('needsHelpWith', 'What she needs help with'),
       F.lines('makesHappy', 'What makes her happy'), F.lines('importantNow', 'Important to her now'), F.lines('future', 'Important for her future'),
       F.area('parentAspirations', 'Our hopes for her'), F.text('source', 'Source')
     ] },
-    'sendPlans': { label: 'Nursery SEND plan cycles', kind: 'list', group: 'About Dorothea', title: 'cycle', date: 'start', fields: [
+    'sendPlans': { label: 'Nursery SEND plan cycles', kind: 'list', group: 'About', title: 'cycle', date: 'start', fields: [
       F.text('cycle', 'Cycle', { required: true }), F.date('start', 'Started'), F.date('review', 'Review'), F.text('outcome', 'Outcome'), F.area('progress', 'Progress noted')
     ] }
   };
@@ -1989,7 +2017,7 @@
     try {
       var file = new File([json], name, { type: 'application/json' });
       if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: 'Dorothea Hub data' }).then(function () { markExported(); if (after) after(); }, function (err) {
+        navigator.share({ files: [file], title: appName() + ' data' }).then(function () { markExported(); if (after) after(); }, function (err) {
           if (err && err.name === 'AbortError') return;
           fallback();
         });

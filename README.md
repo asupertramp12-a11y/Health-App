@@ -1,8 +1,10 @@
-# Dorothea Hub
+# Family Hub
 
-A family website for keeping on top of Dorothea's health, nursery and EHC assessment information, and preparing for appointments.
+A private family website for keeping on top of a child's health, nursery and EHC assessment information, and preparing for appointments.
 
-**This repository contains no personal information.** Dorothea's details live in a separate `case-data.json` file that is loaded on each phone or laptop and stays in that browser. Never upload `case-data.json` here.
+**This repository contains no personal information, and must stay that way.** Every name, date and detail lives in a separate `case-data.json` file that is loaded on each phone or laptop and stays in that browser. Never upload `case-data.json` here: the repository is public. `.gitignore` blocks it, but files added through GitHub's "Add files via upload" bypass that, so check before uploading.
+
+The app takes the child's name, the council and the names for the sleep diary from the data file (`child.shortName`, `child.localAuthority`, `child.carers`, `child.familyEmails`, and `ehcna.team` for the SEN team to write to). All can be changed in the app's Edit mode.
 
 ## First-time setup on each device
 
@@ -17,7 +19,7 @@ A family website for keeping on top of Dorothea's health, nursery and EHC assess
 
 ## Updating the information
 
-1. Edit `case-data.json` (or ask Claude in the Dorothea Hub project to update it).
+1. Edit `case-data.json` (or ask Claude in your private Claude project to update it).
 2. On each device: **Data and backups → Load data file** and choose the new version.
 
 ## Your notes

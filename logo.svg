@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Dorothea Hub">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Family Hub">
   <rect x="4" y="4" width="56" height="56" rx="18" fill="#FFC233" transform="rotate(-4 32 32)"/>
   <path d="M18 22.5c0-3 2.5-5.5 5.5-5.5h17c3 0 5.5 2.5 5.5 5.5v13c0 3-2.5 5.5-5.5 5.5H30l-7.5 6.2c-.8.7-2 .1-2-1V41h0c-1.4-.9-2.5-2.9-2.5-4.6Z" fill="#17223B"/>
   <circle cx="25" cy="29" r="2.6" fill="#FFC233"/>
