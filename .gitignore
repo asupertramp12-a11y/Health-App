@@ -1,0 +1,3 @@
+# Personal data: load it on each device, never commit it
+case-data.json
+*.case-data.json
