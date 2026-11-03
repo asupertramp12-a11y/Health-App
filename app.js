@@ -1267,7 +1267,7 @@
     ['settling', 'Calming or settling'],
     ['toileting', 'Toileting or nappy change'],
     ['communication', 'Working out what she needed'],
-    ['siblings', 'Kept her from waking Douglas']
+    ['siblings', 'Kept her from waking her sibling']
   ];
   var ROAD_TYPES = [
     ['bolted', 'Ran off or pulled away'],
