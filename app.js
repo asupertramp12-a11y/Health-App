@@ -613,13 +613,14 @@
             html += '</ol><p class="today-line">Today, ' + esc(fmt(todayISO())) + '</p><ol class="tl">';
             todayDrawn = true;
           }
-          var cls = e.kind === 'deadline' ? 'deadline' : (future ? 'upcoming' : (e.kind === 'inferred' ? 'inferred' : ''));
+          var cls = e.kind === 'deadline' && !e.happened ? 'deadline' : (future ? 'upcoming' : (e.kind === 'inferred' ? 'inferred' : ''));
           html += '<li><span class="dot ' + esc(e.domain) + '" aria-hidden="true"></span><article class="card ' + cls + '">' +
             '<div class="meta"><span class="date">' + esc(fmt(e.date)) + '</span>' +
               '<span class="pill">' + esc(domainShort(e.domain)) + '</span>' +
               (e.evidence ? '<span class="pill sky">' + esc(e.evidence) + '</span>' : '') +
-              (e.kind === 'deadline' && !future ? '<span class="pill coral">Missed deadline</span>' : '') +
-              (e.kind === 'deadline' && future ? '<span class="pill coral">Deadline</span>' : '') +
+              (e.kind === 'deadline' && e.happened ? '<span class="pill mint">Met</span>' : '') +
+              (e.kind === 'deadline' && !e.happened && !future ? '<span class="pill coral">Missed deadline</span>' : '') +
+              (e.kind === 'deadline' && !e.happened && future ? '<span class="pill coral">Deadline</span>' : '') +
               (e.kind === 'change' ? '<span class="pill lilac">Change of officer</span>' : '') +
               (future ? '<span class="pill">' + esc(relative(e.date)) + '</span>' : '') +
               confPill(e.confidence) + eb('events', e) +
