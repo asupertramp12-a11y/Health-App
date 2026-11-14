@@ -370,6 +370,12 @@
     if (TODAY < until) return { kind: 'waiting', c: sent, date: sd, until: until };
     return null;
   }
+  // Opens a stored file link (OneDrive or other https link) in a new tab; plain text otherwise.
+  function fileLink(text, url) {
+    var u = String(url || '').trim();
+    if (!/^https:\/\//i.test(u)) return esc(text);
+    return '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(text) + ' <span class="tiny">Open</span></a>';
+  }
   function clockActHTML(m) {
     if (!m.overdue) return '';
     var h = caseHolder(), ref = esc((D.meta && D.meta.laReference) || '');
@@ -1626,11 +1632,11 @@
       } else if (tab === 'index') {
         body = '<section class="panel"><div class="table-wrap"><table><thead><tr><th>ID</th><th>Date</th><th>Document</th><th>From</th><th>Finding</th><th>Strength</th></tr></thead><tbody>' +
           arr(D.evidence).slice().sort(function (a, b) { return a.id.localeCompare(b.id); }).map(function (e) {
-            return '<tr><td><span class="pill sky">' + esc(e.id) + '</span></td><td style="white-space:nowrap">' + esc(fmt(e.date)) + '</td><td>' + esc(e.doc) + '</td><td>' + esc(e.author) + '<br><span class="tiny">' + esc(e.org) + '</span></td><td>' + esc(e.finding) + '</td><td>' + esc(e.strength) + eb('evidence', e) + '</td></tr>';
+            return '<tr><td><span class="pill sky">' + esc(e.id) + '</span></td><td style="white-space:nowrap">' + esc(fmt(e.date)) + '</td><td>' + fileLink(e.doc, e.link) + '</td><td>' + esc(e.author) + '<br><span class="tiny">' + esc(e.org) + '</span></td><td>' + esc(e.finding) + '</td><td>' + esc(e.strength) + eb('evidence', e) + '</td></tr>';
           }).join('') + '</tbody></table></div></section>' + addLink('evidence', 'Add evidence');
       } else {
         body = '<section class="panel"><div class="table-wrap"><table><thead><tr><th>File</th><th>Type</th><th>What it is</th></tr></thead><tbody>' +
-          arr(D.documents).map(function (d) { return '<tr><td>' + esc(d.name) + '</td><td>' + esc(d.kind) + '</td><td>' + esc(d.note) + eb('documents', d) + '</td></tr>'; }).join('') +
+          arr(D.documents).map(function (d) { return '<tr><td>' + fileLink(d.name, d.link) + '</td><td>' + esc(d.kind) + '</td><td>' + esc(d.note) + eb('documents', d) + '</td></tr>'; }).join('') +
           '</tbody></table></div></section>' + addLink('documents', 'Add a source file');
       }
       return pageHead('Evidence check', 'Use this before meetings and before the draft plan arrives, to spot what needs correcting or chasing.') +
@@ -2020,10 +2026,10 @@
     ] },
     'evidence': { label: 'Evidence index', kind: 'list', group: 'Evidence', title: 'doc', date: 'date', fields: [
       F.text('id', 'ID (e.g. DDW-016)', { required: true }), F.date('date', 'Date'), F.text('doc', 'Document', { required: true }), F.text('author', 'Author'), F.text('org', 'Organisation'),
-      F.area('finding', 'Finding'), F.sel('domain', 'Area', domainOpts), F.text('strength', 'Strength')
+      F.area('finding', 'Finding'), F.sel('domain', 'Area', domainOpts), F.text('strength', 'Strength'), F.text('link', 'Link to the file', { help: 'Paste the OneDrive link. It only opens for you when signed in.' })
     ] },
     'documents': { label: 'Source files', kind: 'list', group: 'Evidence', title: 'name', fields: [
-      F.text('name', 'File name', { required: true }), F.text('kind', 'Type'), F.text('note', 'What it is')
+      F.text('name', 'File name', { required: true }), F.text('kind', 'Type'), F.text('note', 'What it is'), F.text('link', 'Link to the file', { help: 'Paste the OneDrive link. It only opens for you when signed in.' })
     ] },
     'child': { get label() { return Kids() + ' details'; }, kind: 'object', group: 'About', fields: [
       F.text('name', 'Full name', { required: true }), F.text('shortName', 'Short name'), F.date('dob', 'Date of birth'),
