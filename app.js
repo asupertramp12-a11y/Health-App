@@ -352,16 +352,42 @@
       'Please could you tell us:\n' + asks.map(function (a) { return '- ' + a; }).join('\n') + '\n\n' +
       'Kind regards,\n' + carers().filter(function (x) { return !/^Parent \d$/.test(x); }).join(' and ');
   }
+  // Latest letter or email we have sent (or plan to send) to the case holder, and whether they have replied since.
+  var CHASE_WAIT_DAYS = 14;
+  function chaseState(h) {
+    if (!h.named) return null;
+    var nm = h.name.toLowerCase(), em = (h.email || '').toLowerCase();
+    var hits = function (v) { v = String(v || '').toLowerCase(); return v.indexOf(nm) > -1 || (em && v.indexOf(em) > -1); };
+    var mine = arr(D.correspondence).filter(function (c) { return parseD(c.date); });
+    var sent = mine.filter(function (c) { return c.direction === 'out' && hits(c.to) && !/cancel/i.test(c.status || ''); })
+      .sort(function (a, b) { return parseD(a.date).d - parseD(b.date).d; }).pop();
+    if (!sent) return null;
+    var sd = parseD(sent.date).d;
+    var replied = mine.some(function (c) { return c.direction === 'in' && hits(c.from) && parseD(c.date).d >= sd; });
+    if (replied) return null;
+    var until = new Date(sd.getTime() + CHASE_WAIT_DAYS * DAY);
+    if (sd > TODAY) return { kind: 'planned', c: sent, date: sd, until: until };
+    if (TODAY < until) return { kind: 'waiting', c: sent, date: sd, until: until };
+    return null;
+  }
   function clockActHTML(m) {
     if (!m.overdue) return '';
     var h = caseHolder(), ref = esc((D.meta && D.meta.laReference) || '');
+    var cs = chaseState(h), subj = cs && cs.c.subject ? '“' + esc(cs.c.subject) + '”' : 'Your email';
+    var first = cs && cs.kind === 'planned'
+      ? '<li><b>Email ready to send.</b> ' + subj + ' goes to ' + esc(h.name) + ' on ' + esc(fmt(isoDate(cs.date), true)) +
+          '. It counts as your chase, so there is nothing more to send before then.</li>'
+      : cs
+      ? '<li><b>Chased on ' + esc(fmt(isoDate(cs.date), true)) + '.</b> ' + subj + ' was sent to ' + esc(h.name) +
+          '. Give them until ' + esc(fmt(isoDate(cs.until), true)) + ' to reply before chasing again.</li>'
+      : '<li><b>Chase in writing.</b> Write to ' + esc(h.name) + (h.email ? ' (<a href="mailto:' + esc(h.email) + '">' + esc(h.email) + '</a>)' : '') +
+          (ref ? ', quote ref ' + ref : '') + ' and ask for the date the final plan will be issued. ' +
+          '<button type="button" class="btn btn-sun-quiet no-print" data-action="copy-chase">Copy chase email</button></li>';
     return '<div class="clock-act">' +
       '<h3>What you can do</h3>' +
       '<ol>' +
-        '<li><b>Chase in writing.</b> Write to ' + esc(h.name) + (h.email ? ' (<a href="mailto:' + esc(h.email) + '">' + esc(h.email) + '</a>)' : '') +
-          (ref ? ', quote ref ' + ref : '') + ' and ask for the date the final plan will be issued. ' +
-          '<button type="button" class="btn btn-sun-quiet no-print" data-action="copy-chase">Copy chase email</button></li>' +
-        '<li><b>No clear answer?</b> Make a formal complaint through ' + esc(council().replace(/^The /, 'the ')) + '’s complaints process.</li>' +
+        first +
+        '<li><b>No clear answer' + (cs ? ' by ' + esc(fmt(isoDate(cs.until), true)) : '') + '?</b> Make a formal complaint through ' + esc(council().replace(/^The /, 'the ')) + '’s complaints process.</li>' +
         '<li><b>Still not resolved?</b> Complain to the <a href="https://www.lgo.org.uk/" target="_blank" rel="noopener">Local Government and Social Care Ombudsman</a>.</li>' +
       '</ol></div>';
   }
