@@ -363,8 +363,12 @@
       .sort(function (a, b) { return parseD(a.date).d - parseD(b.date).d; }).pop();
     if (!sent) return null;
     var sd = parseD(sent.date).d;
-    var replied = mine.some(function (c) { return c.direction === 'in' && hits(c.from) && parseD(c.date).d >= sd; });
-    if (replied) return null;
+    var reply = mine.filter(function (c) { return c.direction === 'in' && hits(c.from) && parseD(c.date).d >= sd; })
+      .sort(function (a, b) { return parseD(a.date).d - parseD(b.date).d; }).pop();
+    if (reply) {
+      var rd = parseD(reply.date).d, rUntil = new Date(rd.getTime() + CHASE_WAIT_DAYS * DAY);
+      return TODAY < rUntil ? { kind: 'replied', c: reply, date: rd, until: rUntil } : null;
+    }
     var until = new Date(sd.getTime() + CHASE_WAIT_DAYS * DAY);
     if (sd > TODAY) return { kind: 'planned', c: sent, date: sd, until: until };
     if (TODAY < until) return { kind: 'waiting', c: sent, date: sd, until: until };
@@ -380,7 +384,11 @@
     if (!m.overdue) return '';
     var h = caseHolder(), ref = esc((D.meta && D.meta.laReference) || '');
     var cs = chaseState(h), subj = cs && cs.c.subject ? '“' + esc(cs.c.subject) + '”' : 'Your email';
-    var first = cs && cs.kind === 'planned'
+    var next = D.ehcna && D.ehcna.expectedOutcome ? ' Next: ' + esc(D.ehcna.expectedOutcome) : '';
+    var first = cs && cs.kind === 'replied'
+      ? '<li><b>' + esc(h.name) + ' replied on ' + esc(fmt(isoDate(cs.date), true)) + '.</b> ' + subj + '.' + next +
+          ' Nothing to chase before ' + esc(fmt(isoDate(cs.until), true)) + '.</li>'
+      : cs && cs.kind === 'planned'
       ? '<li><b>Email ready to send.</b> ' + subj + ' goes to ' + esc(h.name) + ' on ' + esc(fmt(isoDate(cs.date), true)) +
           '. It counts as your chase, so there is nothing more to send before then.</li>'
       : cs
