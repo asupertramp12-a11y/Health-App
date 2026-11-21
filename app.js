@@ -36,6 +36,8 @@
     if (!NOTES.statusOverrides) NOTES.statusOverrides = {};
   }
   ensureLogs();
+  // Ask the browser not to clear this app's storage when space runs low.
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {}); } catch (e) { /* ignore */ }
   function saveNotes() { NOTES.updated = new Date().toISOString(); return writeStore(KEYS.notes, NOTES); }
   /* Names come from the loaded data file, so the public code holds nothing about the family. */
   function kid() { var c = D && D.child; return (c && (c.shortName || (c.name || '').split(' ')[0])) || 'your child'; }
@@ -1851,7 +1853,7 @@
         if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
       } else if (action === 'export-data') {
         if (!D) { setStatus('No data loaded yet.', true); return; }
-        download('case-data.json', D); markExported(); setStatus('Downloaded case-data.json');
+        download('case-data.json', withNotes()); markExported(); notesSaved(); setStatus('Downloaded case-data.json, including the diary and notes.');
       } else if (action === 'save-file') {
         ev.preventDefault();
         if (!D) return;
@@ -1885,12 +1887,20 @@
           var d3 = $('#settings'); if (!d3.open && d3.showModal) d3.showModal();
           setStatus('That file isn’t a hub data file. It needs “child” and “events” sections.', true); return;
         }
+        var incNotes = obj.notes; delete obj.notes;
         if (D) pushUndo('load ' + f.name);
         if (!writeStore(KEYS.data, obj)) { setStatus('This browser wouldn’t store the file. It may be in private mode.', true); return; }
         markExported();
+        var addedNotes = '';
+        if (incNotes && typeof incNotes.prep === 'object') {
+          var before = NOTES.sleep.length + NOTES.incidents.length;
+          mergeNotes(NOTES, normaliseNotes(incNotes)); saveNotes();
+          var gained = NOTES.sleep.length + NOTES.incidents.length - before;
+          addedNotes = gained > 0 ? ' Added ' + gained + ' diary ' + (gained === 1 ? 'entry' : 'entries') + ' from the file.' : ' Diary already up to date.';
+        }
         D = obj; usingOverride = true; refreshSettingsNote(); render();
         var iss = clockIssues(obj.ehcna || {});
-        setStatus('Loaded ' + f.name + '.' + (iss.length ? ' Check the assessment dates: ' + iss.join('; ') + '.' : ''), iss.length > 0);
+        setStatus('Loaded ' + f.name + '.' + addedNotes + (iss.length ? ' Check the assessment dates: ' + iss.join('; ') + '.' : ''), iss.length > 0);
       });
     });
     $('#load-notes').addEventListener('change', function (ev) {
@@ -2139,14 +2149,21 @@
     return arr(D && D.changeLog).filter(function (c) { return !ex || c.at > ex; }).length;
   }
   function markExported() { writeStore(EKEYS.exported, new Date().toISOString()); }
+  // The saved file carries the diary and notes too, so saving it to OneDrive backs them up.
+  function withNotes() {
+    var o = {}; Object.keys(D).forEach(function (k) { o[k] = D[k]; });
+    if (hasNotes()) o.notes = NOTES;
+    return o;
+  }
+  function notesSaved() { if (hasNotes()) { writeStore(BACKUP_KEY, new Date().toISOString()); refreshBackupNote(); } }
   function saveFile(after) {
-    var name = 'case-data.json';
-    var json = JSON.stringify(D, null, 2);
-    function fallback() { download(name, D); markExported(); if (after) after(); }
+    var name = 'case-data.json', out = withNotes();
+    var json = JSON.stringify(out, null, 2);
+    function fallback() { download(name, out); markExported(); notesSaved(); if (after) after(); }
     try {
       var file = new File([json], name, { type: 'application/json' });
       if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: appName() + ' data' }).then(function () { markExported(); if (after) after(); }, function (err) {
+        navigator.share({ files: [file], title: appName() + ' data' }).then(function () { markExported(); notesSaved(); if (after) after(); }, function (err) {
           if (err && err.name === 'AbortError') return;
           fallback();
         });
