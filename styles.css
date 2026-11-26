@@ -780,3 +780,7 @@ p.clock-big { margin: 0; }
 .fact .v small { font-family: var(--font-body); font-size: 0.8rem; font-weight: 700; color: var(--ink-soft); }
 ::selection { background: var(--sun-soft); color: var(--ink); }
 input, textarea { caret-color: var(--sky); }
+
+.sync-folder { display: grid; gap: 6px; margin: 8px 0; font-size: .95rem; }
+.sync-folder input { font: inherit; padding: 10px 12px; border: 1px solid var(--line, #cfd8e6); border-radius: 10px; }
+.sync-note.bad { color: #b3261e; }

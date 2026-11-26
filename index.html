@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2026-10-31f">
+  <link rel="stylesheet" href="styles.css?v=2026-11-26a">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -72,6 +72,17 @@
         <button type="button" class="btn btn-secondary" data-action="export-data" id="export-data-btn">Download data as JSON</button>
       </div>
 
+      <h3>OneDrive sync</h3>
+      <p class="muted sync-note" id="sync-note"></p>
+      <label class="sync-folder" id="sync-folder-wrap" hidden>Folder in your OneDrive that holds <code>case-data.json</code>
+        <input type="text" id="sync-folder" autocomplete="off" spellcheck="false" placeholder="e.g. My Folder/Hub">
+      </label>
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" data-action="sync-signin" id="sync-signin" hidden>Sign in with Microsoft</button>
+        <button type="button" class="btn btn-secondary" data-action="sync-now" id="sync-now" hidden>Sync now</button>
+        <button type="button" class="btn btn-quiet" data-action="sync-signout" id="sync-signout" hidden>Sign out</button>
+      </div>
+
       <h3>Your notes</h3>
       <p class="muted">Questions, ticks, notes, diary entries and appointments you add are saved in this browser only. Back them up to keep them safe or move them between phone and laptop.</p>
       <p class="backup-note" id="backup-note"></p>
@@ -106,6 +117,6 @@
 
   <noscript><p class="noscript">Family Hub needs JavaScript turned on.</p></noscript>
 
-  <script src="app.js?v=2026-11-21a"></script>
+  <script src="app.js?v=2026-11-26a"></script>
 </body>
 </html>

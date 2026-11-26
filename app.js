@@ -38,7 +38,7 @@
   ensureLogs();
   // Ask the browser not to clear this app's storage when space runs low.
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {}); } catch (e) { /* ignore */ }
-  function saveNotes() { NOTES.updated = new Date().toISOString(); return writeStore(KEYS.notes, NOTES); }
+  function saveNotes() { NOTES.updated = new Date().toISOString(); var ok = writeStore(KEYS.notes, NOTES); hubDirty(); return ok; }
   /* Names come from the loaded data file, so the public code holds nothing about the family. */
   function kid() { var c = D && D.child; return (c && (c.shortName || (c.name || '').split(' ')[0])) || 'your child'; }
   function kids() { return kid() === 'your child' ? 'your child’s' : kid() + '’s'; }
@@ -1826,6 +1826,7 @@
       var t = ev.target.closest('[data-action]');
       if (!t) return;
       var action = t.getAttribute('data-action');
+      if (hubAction(action)) { ev.preventDefault(); return; }
       if (action === 'copy-chase') {
         var cmod = D && clockModel(); if (!cmod) return;
         var ctext = chaseEmailText(cmod);
@@ -1898,7 +1899,7 @@
           var gained = NOTES.sleep.length + NOTES.incidents.length - before;
           addedNotes = gained > 0 ? ' Added ' + gained + ' diary ' + (gained === 1 ? 'entry' : 'entries') + ' from the file.' : ' Diary already up to date.';
         }
-        D = obj; usingOverride = true; refreshSettingsNote(); render();
+        D = obj; usingOverride = true; refreshSettingsNote(); render(); hubDirty();
         var iss = clockIssues(obj.ehcna || {});
         setStatus('Loaded ' + f.name + '.' + addedNotes + (iss.length ? ' Check the assessment dates: ' + iss.join('; ') + '.' : ''), iss.length > 0);
       });
@@ -2142,6 +2143,7 @@
     var ok = writeStore(KEYS.data, D);
     usingOverride = true;
     refreshSettingsNote();
+    hubDirty();
     return ok;
   }
   function unsavedCount() {
@@ -2181,6 +2183,7 @@
     writeStore(KEYS.data, D);
     usingOverride = true;
     refreshSettingsNote();
+    hubDirty();
     return top.label;
   }
   function setEdit(on) {
@@ -2497,8 +2500,258 @@
   }
 
 
+  /* ------------------------------------------------------------ OneDrive sync
+     Optional. After signing in with Microsoft, the app keeps the data file in the family's own
+     OneDrive folder (read and saved through Microsoft Graph), so every device opens the latest copy.
+     Small update files dropped into the folder's Inbox are merged in and then moved to Inbox/Applied.
+     Nothing personal is in this code: the folder path comes from the data file or is typed in once. */
+  var HUB_CLIENT_ID = '';
+  var AUTH_HOST = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/';
+  var GRAPH = 'https://graph.microsoft.com/v1.0';
+  var HUB_SCOPES = 'offline_access Files.ReadWrite User.Read';
+  var SKEYS = { auth: 'dh:auth:v1', sync: 'dh:sync:v1', pkce: 'dh:pkce:v1' };
+  var hubBusy = false, hubTimer = null, hubLastTry = 0;
+
+  function hubState() { return readStore(SKEYS.sync) || {}; }
+  function hubSet(patch) { var s = hubState(); Object.keys(patch).forEach(function (k) { s[k] = patch[k]; }); writeStore(SKEYS.sync, s); return s; }
+  function hubAuth() { return readStore(SKEYS.auth); }
+  function hubReady() { return !!(HUB_CLIENT_ID && hubAuth()); }
+  function hubFolder() { var s = hubState(); return (s.folder || (D && D.meta && D.meta.onedriveHubPath) || '').replace(/^\/+|\/+$/g, ''); }
+  function redirectUri() { return location.origin + location.pathname; }
+  function b64url(buf) {
+    var s = '', b = new Uint8Array(buf);
+    for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function randomString() { var a = new Uint8Array(32); crypto.getRandomValues(a); return b64url(a); }
+
+  /* Sign in: authorisation code with PKCE, returning to this page with ?code=… */
+  function hubSignIn(silent) {
+    var verifier = randomString(), state = randomString();
+    crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)).then(function (h) {
+      writeStore(SKEYS.pkce, { verifier: verifier, state: state, hash: location.hash || '#/home', silent: !!silent });
+      var a = hubAuth() || {}, q = {
+        client_id: HUB_CLIENT_ID, response_type: 'code', redirect_uri: redirectUri(), response_mode: 'query',
+        scope: HUB_SCOPES, state: state, code_challenge: b64url(h), code_challenge_method: 'S256'
+      };
+      if (silent) q.prompt = 'none';
+      if (a.user) q.login_hint = a.user;
+      location.assign(AUTH_HOST + 'authorize?' + new URLSearchParams(q).toString());
+    });
+  }
+  function tokenRequest(params) {
+    params.client_id = HUB_CLIENT_ID;
+    return fetch(AUTH_HOST + 'token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params).toString() })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw Object.assign(new Error(j.error_description || 'Sign-in failed'), { code: j.error }); return j; }); });
+  }
+  function storeTokens(j) {
+    var a = hubAuth() || {};
+    a.access = j.access_token; a.exp = Date.now() + (j.expires_in - 60) * 1000;
+    if (j.refresh_token) a.refresh = j.refresh_token;
+    writeStore(SKEYS.auth, a);
+    return a;
+  }
+  /* Called at start: finish a sign-in that has just come back to the page. */
+  function hubHandleReturn() {
+    var p = new URLSearchParams(location.search), pk = readStore(SKEYS.pkce);
+    if (!pk || (!p.get('code') && !p.get('error')) || p.get('state') !== pk.state) return Promise.resolve(false);
+    removeStore(SKEYS.pkce);
+    history.replaceState(null, '', redirectUri() + (pk.hash || ''));
+    if (p.get('error')) {
+      if (!pk.silent) setTimeout(function () { flash('Microsoft sign-in didn’t finish: ' + (p.get('error_description') || p.get('error')).split('\n')[0]); }, 300);
+      return Promise.resolve(false);
+    }
+    return tokenRequest({ grant_type: 'authorization_code', code: p.get('code'), redirect_uri: redirectUri(), code_verifier: pk.verifier, scope: HUB_SCOPES })
+      .then(function (j) { storeTokens(j); return graph('/me?$select=userPrincipalName,mail').then(function (me) {
+        var a = hubAuth(); a.user = me.userPrincipalName || me.mail || ''; writeStore(SKEYS.auth, a); return true; }); })
+      .catch(function (e) { flash('Couldn’t finish signing in: ' + e.message); return false; });
+  }
+  function accessToken() {
+    var a = hubAuth();
+    if (!a) return Promise.reject(new Error('Not signed in'));
+    if (a.access && Date.now() < a.exp) return Promise.resolve(a.access);
+    if (!a.refresh) { hubSignIn(true); return new Promise(function () {}); }
+    return tokenRequest({ grant_type: 'refresh_token', refresh_token: a.refresh, scope: HUB_SCOPES })
+      .then(function (j) { return storeTokens(j).access; })
+      .catch(function () { a.refresh = null; writeStore(SKEYS.auth, a); hubSignIn(true); return new Promise(function () {}); });
+  }
+  function graph(path, opts) {
+    opts = opts || {};
+    return accessToken().then(function (tok) {
+      var h = { Authorization: 'Bearer ' + tok }; Object.keys(opts.headers || {}).forEach(function (k) { h[k] = opts.headers[k]; });
+      return fetch(path.indexOf('https://') === 0 ? path : GRAPH + path, { method: opts.method || 'GET', headers: h, body: opts.body });
+    }).then(function (r) {
+      if (opts.raw) return r;
+      if (r.status === 404) return null;
+      if (!r.ok) return r.text().then(function (t) { throw Object.assign(new Error('OneDrive said ' + r.status), { status: r.status, body: t }); });
+      return r.status === 204 ? {} : r.json();
+    });
+  }
+  function drivePath(rel) { return '/me/drive/root:/' + (hubFolder() + (rel ? '/' + rel : '')).split('/').map(encodeURIComponent).join('/'); }
+  function readItemJSON(item) {
+    var url = item && item['@microsoft.graph.downloadUrl'];
+    if (!url) return graph('/me/drive/items/' + item.id + '?$select=id,@microsoft.graph.downloadUrl').then(readItemJSON);
+    return fetch(url).then(function (r) { if (!r.ok) throw new Error('Download failed'); return r.json(); });
+  }
+  function putJSON(rel, obj, etag) {
+    var h = { 'Content-Type': 'application/json' }; if (etag) h['If-Match'] = etag;
+    return graph(drivePath(rel) + ':/content', { method: 'PUT', headers: h, body: JSON.stringify(obj, null, 1), raw: true }).then(function (r) {
+      if (r.status === 412) throw Object.assign(new Error('changed'), { status: 412 });
+      if (!r.ok) throw new Error('Saving to OneDrive failed (' + r.status + ')');
+      return r.json();
+    });
+  }
+  function latestChange(d) { return arr(d && d.changeLog).reduce(function (m, c) { return c.at > m ? c.at : m; }, (d && d.meta && d.meta.editedAt) || ''); }
+
+  /* An Inbox update file: { id, add: {section: [items]}, update: {section: [{id, …fields}]}, set: {"a.b": value}, removeGaps: [titles] } */
+  function applyPatch(d, p) {
+    var n = 0;
+    d.appliedPatches = arr(d.appliedPatches);
+    if (!p || !p.id || d.appliedPatches.indexOf(p.id) !== -1) return 0;
+    function same(a, b) {
+      if (a.id || b.id) return a.id === b.id;
+      return JSON.stringify(a) === JSON.stringify(b) || (a.title && a.title === b.title) || (a.name && a.name === b.name) || (a.label && a.date && a.label === b.label && a.date === b.date);
+    }
+    Object.keys(p.add || {}).forEach(function (sec) {
+      d[sec] = arr(d[sec]);
+      arr(p.add[sec]).forEach(function (x) { if (!d[sec].some(function (y) { return same(y, x); })) { d[sec].push(x); n++; } });
+    });
+    Object.keys(p.update || {}).forEach(function (sec) {
+      arr(p.update[sec]).forEach(function (u) {
+        arr(d[sec]).forEach(function (y) { if (y.id === u.id) { Object.keys(u).forEach(function (k) { y[k] = u[k]; }); n++; } });
+      });
+    });
+    Object.keys(p.set || {}).forEach(function (path) {
+      var keys = path.split('.'), o = d;
+      keys.slice(0, -1).forEach(function (k) { if (!o[k] || typeof o[k] !== 'object') o[k] = {}; o = o[k]; });
+      o[keys[keys.length - 1]] = p.set[path]; n++;
+    });
+    if (p.removeGaps) { var before = arr(d.gaps).length; d.gaps = arr(d.gaps).filter(function (g) { return p.removeGaps.indexOf(g.title) === -1; }); n += before - d.gaps.length; }
+    d.appliedPatches.push(p.id);
+    d.changeLog = arr(d.changeLog);
+    d.changeLog.unshift({ at: new Date().toISOString(), action: 'added', section: 'OneDrive inbox', item: p.title || p.id });
+    return n || 1;
+  }
+  function applyInbox(d) {
+    return graph(drivePath('Inbox') + ':/children?$select=id,name,file,@microsoft.graph.downloadUrl&$top=100').then(function (res) {
+      var files = arr(res && res.value).filter(function (f) { return f.file && /\.json$/i.test(f.name); })
+        .sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+      var count = 0, done = [];
+      return files.reduce(function (pr, f) {
+        return pr.then(function () { return readItemJSON(f); }).then(function (p) { count += applyPatch(d, p) ? 1 : 0; done.push(f); })
+          .catch(function () { /* leave a file that can't be read where it is */ });
+      }, Promise.resolve()).then(function () { return { count: count, files: done }; });
+    });
+  }
+  function archiveInbox(files) {
+    if (!files.length) return Promise.resolve();
+    return graph(drivePath('Inbox/Applied')).then(function (fold) {
+      return fold || graph(drivePath('Inbox') + ':/children', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Applied', folder: {}, '@microsoft.graph.conflictBehavior': 'replace' }) });
+    }).then(function (fold) {
+      return Promise.all(files.map(function (f) {
+        return graph('/me/drive/items/' + f.id + '?@microsoft.graph.conflictBehavior=rename', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parentReference: { id: fold.id } }) }).catch(function () {});
+      }));
+    });
+  }
+
+  /* Bring this device and OneDrive into step. */
+  function hubSync(why) {
+    if (!hubReady() || hubBusy) return Promise.resolve();
+    if (!hubFolder()) { hubNote('Choose the OneDrive folder for the data file below.'); return Promise.resolve(); }
+    hubBusy = true; hubLastTry = Date.now(); hubNote('Syncing with OneDrive…');
+    var st = hubState(), msgs = [];
+    return graph(drivePath('case-data.json') + '?$select=id,eTag,lastModifiedDateTime,@microsoft.graph.downloadUrl').then(function (item) {
+      return (item ? readItemJSON(item) : Promise.resolve(null)).then(function (remote) {
+        var base = D, push = false, stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        if (remote && remote.meta) {
+          var remoteNotes = remote.notes; delete remote.notes;
+          if (!D || (!st.dirty && st.etag)) base = remote;             // nothing new here: take OneDrive's copy
+          else if (st.dirty && item.eTag === st.etag) push = true;      // only this device changed: send it up
+          else if (JSON.stringify(remote) === JSON.stringify(D)) base = D;
+          else if (latestChange(remote) > latestChange(D)) {            // both changed (or first sync): newer wins, the other is kept in Archive
+            putJSON('Archive/case-data conflict ' + stamp + '.json', withNotes()).catch(function () {});
+            base = remote; msgs.push('OneDrive had newer changes; this device’s copy was saved to the Archive folder');
+          } else {
+            putJSON('Archive/case-data conflict ' + stamp + '.json', remote).catch(function () {});
+            push = true; msgs.push('Kept this device’s newer changes; the OneDrive copy was saved to the Archive folder');
+          }
+          var theirs = remoteNotes && typeof remoteNotes.prep === 'object' ? normaliseNotes(remoteNotes) : null;
+          if (theirs) {
+            var was = JSON.stringify(NOTES);
+            mergeNotes(NOTES, theirs);
+            if (JSON.stringify(NOTES) !== was) writeStore(KEYS.notes, NOTES);
+            if (JSON.stringify(normaliseNotes(NOTES)) !== JSON.stringify(theirs)) push = true;
+          } else if (hasNotes()) push = true;
+        } else push = !!D;
+        if (!base) return null;
+        return applyInbox(base).then(function (inbox) {
+          if (inbox.count) { push = true; msgs.push(inbox.count + ' update' + (inbox.count === 1 ? '' : 's') + ' added from the Inbox'); }
+          base.meta = base.meta || {}; if (!base.meta.onedriveHubPath) base.meta.onedriveHubPath = hubFolder();
+          var changedLocal = base !== D || inbox.count;
+          D = base; usingOverride = true; writeStore(KEYS.data, D);
+          var out = withNotes();
+          var save = push ? putJSON('case-data.json', out, item && item.eTag) : Promise.resolve({ eTag: item && item.eTag });
+          return save.then(function (saved) {
+            hubSet({ etag: saved.eTag, dirty: false, lastSync: new Date().toISOString() });
+            markExported(); notesSaved();
+            return archiveInbox(inbox.files).then(function () { if (changedLocal) { refreshSettingsNote(); render(); } });
+          });
+        });
+      });
+    }).then(function () {
+      hubBusy = false; hubNote();
+      if (msgs.length) flash(msgs.join('. '));
+    }, function (e) {
+      hubBusy = false;
+      if (e && e.status === 412) { hubSet({ etag: null }); return hubSync(why); }
+      hubNote('Couldn’t sync: ' + (e && e.message || 'unknown error') + '. Your changes are safe on this device.', true);
+    });
+  }
+  function hubDirty() {
+    if (!HUB_CLIENT_ID || !readStore(SKEYS.auth)) return;
+    hubSet({ dirty: true });
+    clearTimeout(hubTimer); hubTimer = setTimeout(function () { hubSync('edit'); }, 4000);
+  }
+  function hubNote(msg, bad) {
+    var el = $('#sync-note'); if (!el) return;
+    var a = hubAuth(), st = hubState();
+    if (!msg) {
+      if (!HUB_CLIENT_ID) msg = 'Not set up yet.';
+      else if (!a) msg = 'Sign in with Microsoft to keep the data file in your OneDrive, so every device opens the latest copy.';
+      else msg = 'Signed in as ' + (a.user || 'your Microsoft account') + (hubFolder() ? ' · folder “' + hubFolder() + '”' : '') +
+        (st.lastSync ? ' · last synced ' + timeAgoShort(st.lastSync) : '') + (st.dirty ? ' · changes waiting' : '');
+    }
+    el.textContent = msg; el.classList.toggle('bad', !!bad);
+    var on = !!a; ['sync-now', 'sync-signout'].forEach(function (id) { var b = $('#' + id); if (b) b.hidden = !on; });
+    var si = $('#sync-signin'); if (si) si.hidden = on || !HUB_CLIENT_ID;
+    var fw = $('#sync-folder-wrap'); if (fw) { fw.hidden = !on; var fi = $('#sync-folder'); if (fi && document.activeElement !== fi) fi.value = hubFolder(); }
+  }
+  function timeAgoShort(iso) {
+    var m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+    return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : daysAgo(iso);
+  }
+  function hubAction(action) {
+    if (action === 'sync-signin') { hubSignIn(false); return true; }
+    if (action === 'sync-now') { var fi = $('#sync-folder'); if (fi && fi.value.trim()) hubSet({ folder: fi.value.trim() }); hubSync('button'); return true; }
+    if (action === 'sync-signout') { removeStore(SKEYS.auth); hubSet({ etag: null, dirty: false }); hubNote('Signed out. Data stays on this device.'); return true; }
+    return false;
+  }
+  function hubStart() {
+    hubNote();
+    hubHandleReturn().then(function (justSignedIn) {
+      hubNote();
+      if (hubReady()) hubSync(justSignedIn ? 'sign-in' : 'start');
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && hubReady() && Date.now() - hubLastTry > 120000) hubSync('focus');
+    });
+  }
+
   /* ------------------------------------------------------------------- Start */
   bindGlobal();
   if (D) refreshSettingsNote();
   render();
+  hubStart();
 })();
